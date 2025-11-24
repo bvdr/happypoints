@@ -173,31 +173,42 @@ interface PlayerSeatProps {
 }
 
 const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe }) => {
-  const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${player.name}`;
+  // SVG format for crisp rendering at any size
+  const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.name)}&format=svg`;
 
   // Push cards slightly towards center
   const cardPos: [number, number, number] = [
-     position[0] * 0.75, 
-     0.2, 
+     position[0] * 0.75,
+     0.2,
      position[2] * 0.75
   ];
   const cardRot: [number, number, number] = [-Math.PI / 2, rotation[1], 0];
 
   return (
     <group>
-      <Html position={[position[0], 1.5, position[2]]} center transform sprite={false} distanceFactor={15} zIndexRange={[100, 0]}>
+      <Html position={[position[0], 1.5, position[2]]} center transform sprite={false} distanceFactor={8} zIndexRange={[100, 0]}>
         <div className={`flex flex-col items-center transition-all duration-300 ${isMe ? 'scale-110' : 'scale-100'}`}>
-          {/* Avatar - Reduced size from w-16 to w-12 */}
+          {/* Avatar - 30% bigger: w-8 h-8 (32px) */}
           <div className={`
-            relative w-12 h-12 rounded-full border-2 shadow-lg mb-1 bg-gray-900 overflow-hidden
+            relative w-8 h-8 rounded-full border shadow-lg mb-0.5 bg-gray-900 overflow-hidden
             ${isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700')}
           `}>
-             <img src={avatarUrl} alt={player.name} className="w-full h-full object-cover" />
+             <img
+               src={avatarUrl}
+               alt={player.name}
+               className="w-full h-full object-cover"
+               style={{
+                 imageRendering: '-webkit-optimize-contrast',
+                 backfaceVisibility: 'hidden',
+                 transform: 'translateZ(0)',
+                 willChange: 'transform'
+               }}
+             />
           </div>
-          
-          {/* Name Tag */}
-          <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700 text-white rounded px-2 py-0.5 shadow-xl min-w-[60px] text-center">
-             <div className="font-bold text-xs truncate max-w-[100px] text-gray-100">{player.name}</div>
+
+          {/* Name Tag - 50% text size reduction */}
+          <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700 text-white rounded px-1 py-0.5 shadow-xl min-w-[30px] text-center">
+             <div className="font-bold text-[0.4rem] truncate max-w-[50px] text-gray-100">{player.name}</div>
           </div>
 
           {/* Reveal Result - Shown below name */}
@@ -343,21 +354,20 @@ export const Table3D: React.FC<Table3DProps> = ({ players, status, average, myId
                               <boxGeometry args={[3.8, 0.8, 0.1]} />
                               <meshBasicMaterial color="black" transparent opacity={0.8} />
                             </mesh>
-                            <Text position={[0, 0, 0.06]} fontSize={0.35} color="#fbbf24" letterSpacing={0.1} font="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hjp-Ek-_EeA.woff">
+                            <Text position={[0, 0, 0.06]} fontSize={0.35} color="#fbbf24" letterSpacing={0.1}>
                               AVERAGE: {average.toFixed(2)}
                             </Text>
                         </group>
                     ) : (
                         <group>
                            {/* Flat text on table */}
-                          <Text 
-                              position={[0, 0.02, 0]} 
+                          <Text
+                              position={[0, 0.02, 0]}
                               rotation={[-Math.PI/2, 0, 0]}
-                              fontSize={0.3} 
-                              color="#a7f3d0" 
+                              fontSize={0.3}
+                              color="#a7f3d0"
                               letterSpacing={0.2}
                               fillOpacity={0.6}
-                              font="https://fonts.gstatic.com/s/inter/v12/UcCO3FwrK3iLTeHuS_fvQtMwCp50KnMw2boKoduKmMEVuLyfAZ9hjp-Ek-_EeA.woff"
                           >
                               PLACE YOUR VOTES
                           </Text>

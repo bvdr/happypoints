@@ -37,7 +37,6 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
       isHost,
       vote: null,
       joinedAt: now, // Track join time for host succession
-      lastHeartbeat: now, // Initialize heartbeat
       isDisconnected: false
     };
 
@@ -208,33 +207,33 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
            });
            break;
 
-        case 'HEARTBEAT':
-          // Update heartbeat timestamp for the player
+        case 'LEAVE':
+          // Mark player as disconnected, then remove after delay
           setGameState(prev => ({
             ...prev,
             players: prev.players.map(p =>
-              p.id === payload.id ? { ...p, lastHeartbeat: Date.now(), isDisconnected: false } : p
+              p.id === payload.id ? { ...p, isDisconnected: true } : p
             )
           }));
-          break;
 
-        case 'LEAVE':
-          // Remove player from the game
-          setGameState(prev => {
-            const remainingPlayers = prev.players.filter(p => p.id !== payload.id);
+          // After 3 seconds, remove the player completely
+          setTimeout(() => {
+            setGameState(prev => {
+              const remainingPlayers = prev.players.filter(p => p.id !== payload.id);
 
-            // If the host left, promote the next player (oldest by joinedAt)
-            if (remainingPlayers.length > 0) {
-              const oldHost = prev.players.find(p => p.id === payload.id)?.isHost;
-              if (oldHost) {
-                // Sort by joinedAt to find the next in line
-                const sortedPlayers = [...remainingPlayers].sort((a, b) => a.joinedAt - b.joinedAt);
-                sortedPlayers[0].isHost = true;
+              // If the host left, promote the next player (oldest by joinedAt)
+              if (remainingPlayers.length > 0) {
+                const oldHost = prev.players.find(p => p.id === payload.id)?.isHost;
+                if (oldHost) {
+                  // Sort by joinedAt to find the next in line
+                  const sortedPlayers = [...remainingPlayers].sort((a, b) => a.joinedAt - b.joinedAt);
+                  sortedPlayers[0].isHost = true;
+                }
               }
-            }
 
-            return { ...prev, players: remainingPlayers };
-          });
+              return { ...prev, players: remainingPlayers };
+            });
+          }, 3000);
           break;
       }
     };
@@ -248,82 +247,21 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     };
   }, [channel, joinGame, isHost, myId]); // Dependencies intentionally simplified to avoid loops
 
-  // --- Heartbeat System ---
-  // Send heartbeat every 2 seconds and update own timestamp
+  // --- Window Close Detection ---
+  // Detect when tab/window is closed and broadcast LEAVE message
   useEffect(() => {
-    const heartbeatInterval = setInterval(() => {
-      // Update my own heartbeat locally first
-      setGameState(prev => ({
-        ...prev,
-        players: prev.players.map(p =>
-          p.id === myId ? { ...p, lastHeartbeat: Date.now(), isDisconnected: false } : p
-        )
-      }));
+    const handleBeforeUnload = () => {
+      // Broadcast that this player is leaving
+      // Note: This runs synchronously before the tab closes
+      channel.postMessage({ type: 'LEAVE', payload: { id: myId } });
+    };
 
-      // Broadcast to other tabs
-      broadcast({ type: 'HEARTBEAT', payload: { id: myId } });
-    }, 2000);
+    window.addEventListener('beforeunload', handleBeforeUnload);
 
-    return () => clearInterval(heartbeatInterval);
-  }, [broadcast, myId]);
-
-  // --- Disconnect Detection ---
-  // Check for disconnected players every 3 seconds
-  useEffect(() => {
-    const disconnectCheckInterval = setInterval(() => {
-      const now = Date.now();
-      const DISCONNECT_THRESHOLD = 6000; // 6 seconds without heartbeat = disconnected
-      const REMOVAL_DELAY = 3000; // Remove 3 seconds after marking as disconnected
-
-      setGameState(prev => {
-        let playersUpdated = false;
-        let playersToRemove: string[] = [];
-
-        const updatedPlayers = prev.players.map(p => {
-          const timeSinceHeartbeat = now - p.lastHeartbeat;
-
-          // Mark as disconnected if no heartbeat for 6 seconds
-          if (timeSinceHeartbeat > DISCONNECT_THRESHOLD && !p.isDisconnected) {
-            playersUpdated = true;
-            return { ...p, isDisconnected: true };
-          }
-
-          // Mark for removal if disconnected for more than 3 seconds
-          if (p.isDisconnected && timeSinceHeartbeat > DISCONNECT_THRESHOLD + REMOVAL_DELAY) {
-            playersToRemove.push(p.id);
-          }
-
-          return p;
-        });
-
-        // Remove disconnected players and handle host succession
-        if (playersToRemove.length > 0) {
-          playersUpdated = true;
-          const remainingPlayers = updatedPlayers.filter(p => !playersToRemove.includes(p.id));
-
-          // Check if host was removed, promote next player
-          if (remainingPlayers.length > 0) {
-            const removedHost = updatedPlayers.find(p => playersToRemove.includes(p.id) && p.isHost);
-            if (removedHost) {
-              const sortedPlayers = [...remainingPlayers].sort((a, b) => a.joinedAt - b.joinedAt);
-              sortedPlayers[0].isHost = true;
-            }
-          }
-
-          // Broadcast LEAVE for each removed player
-          playersToRemove.forEach(id => {
-            broadcast({ type: 'LEAVE', payload: { id } });
-          });
-
-          return { ...prev, players: remainingPlayers };
-        }
-
-        return playersUpdated ? { ...prev, players: updatedPlayers } : prev;
-      });
-    }, 3000);
-
-    return () => clearInterval(disconnectCheckInterval);
-  }, [broadcast]);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [channel, myId]);
 
   return {
     myId,

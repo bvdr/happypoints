@@ -6,8 +6,7 @@ export interface Player {
   vote?: CardValue | null;
   isHost: boolean;
   joinedAt: number; // Timestamp for host succession order
-  lastHeartbeat: number; // Timestamp for disconnect detection
-  isDisconnected?: boolean; // Flag for disconnected state
+  isDisconnected?: boolean; // Flag for disconnected state (when tab closes)
 }
 
 export enum GameStatus {
@@ -24,6 +23,6 @@ export interface GameState {
 }
 
 export interface SocketMessage {
-  type: 'JOIN' | 'VOTE' | 'REVEAL' | 'RESET' | 'SYNC_REQUEST' | 'SYNC_RESPONSE' | 'HEARTBEAT' | 'LEAVE';
+  type: 'JOIN' | 'VOTE' | 'REVEAL' | 'RESET' | 'SYNC_REQUEST' | 'SYNC_RESPONSE' | 'LEAVE';
   payload?: any;
 }

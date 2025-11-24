@@ -336,12 +336,12 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
       cameraControllerRef.current?.resetCamera();
     }
   }));
-  
+
   const { feltShape, railShape, feltTexture } = useMemo(() => {
-    const width = TABLE_WIDTH; 
+    const width = TABLE_WIDTH;
     const depth = TABLE_DEPTH;
-    const radius = depth / 2; 
-    const railWidth = 0.8; 
+    const radius = depth / 2;
+    const railWidth = 0.8;
 
     const feltShape = createStadiumShape(width, depth, radius);
     const railShape = createStadiumShape(width + railWidth * 2, depth + railWidth * 2, radius + railWidth);
@@ -350,15 +350,26 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
     texture.wrapS = THREE.ClampToEdgeWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
     texture.repeat.set(1, 1);
-    
+
     return { feltShape, railShape, feltTexture: texture };
   }, []);
 
+  // Reorder players array so current player is always at bottom (index 0)
+  // This rotates the view without changing the actual join order
+  const reorderedPlayers = useMemo(() => {
+    const myIndex = players.findIndex(p => p.id === myId);
+    if (myIndex === -1) return players;
+
+    // Rotate array so current player is first
+    return [...players.slice(myIndex), ...players.slice(0, myIndex)];
+  }, [players, myId]);
+
   const getSeatPosition = (index: number, total: number) => {
+    // Start from bottom center (Math.PI/2 makes bottom = 0 index)
     const angle = (index / total) * Math.PI * 2 + Math.PI / 2;
-    const radiusX = TABLE_WIDTH / 2 + 1.0; 
+    const radiusX = TABLE_WIDTH / 2 + 1.0;
     const radiusZ = TABLE_DEPTH / 2 + 1.0;
-    
+
     const x = Math.cos(angle) * radiusX;
     const z = Math.sin(angle) * radiusZ;
     const rotY = -Math.atan2(z, x) - Math.PI / 2;
@@ -459,8 +470,8 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
                   </group>
 
                   {/* PLAYERS */}
-                  {players.map((player, i) => {
-                    const { pos, rot } = getSeatPosition(i, players.length);
+                  {reorderedPlayers.map((player, i) => {
+                    const { pos, rot } = getSeatPosition(i, reorderedPlayers.length);
                     return (
                         <PlayerSeat
                           key={player.id}

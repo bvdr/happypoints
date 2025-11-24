@@ -13,14 +13,61 @@ const getHashParams = () => {
   };
 };
 
+// Game component that only mounts after user enters name
+const GameSession: React.FC<{
+  playerName: string;
+  sessionId: string;
+  isHost: boolean;
+  onCopyLink: () => void;
+}> = ({ playerName, sessionId, isHost, onCopyLink }) => {
+  const table3DRef = useRef<Table3DRef>(null);
+  const { myId, gameState, vote, revealVotes, resetRound } = useGameSession(
+    playerName,
+    sessionId,
+    isHost
+  );
+
+  return (
+    <div className="w-full h-screen relative overflow-hidden bg-gray-900">
+      {/* 3D Scene */}
+      <Table3D
+        ref={table3DRef}
+        players={gameState.players}
+        status={gameState.status}
+        average={gameState.average}
+        myId={myId}
+      />
+
+      {/* 2D Overlay */}
+      <UIOverlay
+        myId={myId}
+        gameState={gameState}
+        onVote={vote}
+        onReveal={revealVotes}
+        onReset={resetRound}
+        onResetCamera={() => table3DRef.current?.resetCamera()}
+      />
+
+      {/* Share Floating Button */}
+      <button
+        onClick={onCopyLink}
+        className="absolute top-4 right-4 z-20 bg-white/10 hover:bg-white/20 text-white p-2 rounded-full backdrop-blur-md border border-white/10 transition-all"
+        title="Copy Invite Link"
+      >
+        <LinkIcon size={20} />
+      </button>
+    </div>
+  );
+};
+
 const App = () => {
   const [name, setName] = useState('');
   const [started, setStarted] = useState(false);
-  const table3DRef = useRef<Table3DRef>(null);
+  const [confirmedName, setConfirmedName] = useState('');
 
   // Router state
   const [urlParams, setUrlParams] = useState(getHashParams());
-  
+
   const sessionId = useMemo(() => {
     return urlParams.session || Math.random().toString(36).substring(2, 8).toUpperCase();
   }, [urlParams.session]);
@@ -28,16 +75,12 @@ const App = () => {
   // Is this user the creator? (Simplified: if no session in URL initially, they are creator)
   const isHost = useMemo(() => !urlParams.session, [urlParams.session]);
 
-  const { myId, gameState, vote, revealVotes, resetRound } = useGameSession(
-    name, 
-    sessionId, 
-    isHost
-  );
-
   const handleStart = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    
+
+    setConfirmedName(name.trim());
+
     if (isHost) {
       window.location.hash = `session=${sessionId}`;
     }
@@ -102,35 +145,12 @@ const App = () => {
   }
 
   return (
-    <div className="w-full h-screen relative overflow-hidden bg-gray-900">
-      {/* 3D Scene */}
-      <Table3D
-        ref={table3DRef}
-        players={gameState.players}
-        status={gameState.status}
-        average={gameState.average}
-        myId={myId}
-      />
-
-      {/* 2D Overlay */}
-      <UIOverlay
-        myId={myId}
-        gameState={gameState}
-        onVote={vote}
-        onReveal={revealVotes}
-        onReset={resetRound}
-        onResetCamera={() => table3DRef.current?.resetCamera()}
-      />
-
-      {/* Share Floating Button */}
-      <button 
-        onClick={copyLink}
-        className="absolute top-4 right-4 z-20 bg-white/10 hover:bg-white/20 text-white p-2 rounded-full backdrop-blur-md border border-white/10 transition-all"
-        title="Copy Invite Link"
-      >
-        <LinkIcon size={20} />
-      </button>
-    </div>
+    <GameSession
+      playerName={confirmedName}
+      sessionId={sessionId}
+      isHost={isHost}
+      onCopyLink={copyLink}
+    />
   );
 };
 

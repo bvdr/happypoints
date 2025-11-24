@@ -179,7 +179,8 @@ interface PlayerSeatProps {
 
 const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe }) => {
   // SVG format for crisp rendering at any size
-  const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.name)}&format=svg`;
+  // Using player ID + name as seed to ensure uniqueness (even if multiple players have same name)
+  const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.id + player.name)}&format=svg`;
 
   // Push cards slightly towards center
   const cardPos: [number, number, number] = [

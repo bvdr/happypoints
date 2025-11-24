@@ -31,7 +31,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
 
   const joinGame = useCallback(() => {
     const newPlayer: Player = { id: myId, name: initialPlayerName, isHost, vote: null };
-    
+
     setGameState(prev => {
       // Avoid duplicates
       if (prev.players.find(p => p.id === myId)) return prev;
@@ -39,7 +39,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     });
 
     broadcast({ type: 'JOIN', payload: newPlayer });
-    
+
     // If I am new, ask for current state
     if (!isHost) {
       broadcast({ type: 'SYNC_REQUEST', payload: null });

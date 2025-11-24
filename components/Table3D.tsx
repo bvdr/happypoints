@@ -1,9 +1,14 @@
-import React, { useRef, useMemo, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Text, Environment, ContactShadows, PresentationControls, Html, useProgress } from '@react-three/drei';
+import React, { useRef, useMemo, Suspense, forwardRef, useImperativeHandle } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Text, Environment, ContactShadows, OrbitControls, Html, useProgress } from '@react-three/drei';
 import * as THREE from 'three';
 import { Player, GameStatus } from '../types';
 import { FELT_COLOR, RAIL_COLOR, CARD_BACK_COLOR, CARD_FRONT_COLOR, TABLE_WIDTH, TABLE_DEPTH, FELT_RING_COLOR } from '../constants';
+import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+
+export interface Table3DRef {
+  resetCamera: () => void;
+}
 
 // --- Helpers ---
 
@@ -186,11 +191,11 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
 
   return (
     <group>
-      <Html position={[position[0], 1.5, position[2]]} center transform sprite={false} distanceFactor={8} zIndexRange={[100, 0]}>
+      <Html position={[position[0], 1.5, position[2]]} center sprite distanceFactor={8} zIndexRange={[100, 0]}>
         <div className={`flex flex-col items-center transition-all duration-300 ${isMe ? 'scale-110' : 'scale-100'}`}>
-          {/* Avatar - 30% bigger: w-8 h-8 (32px) */}
+          {/* Avatar - Doubled size: w-16 h-16 (64px) */}
           <div className={`
-            relative w-8 h-8 rounded-full border shadow-lg mb-0.5 bg-gray-900 overflow-hidden
+            relative w-16 h-16 rounded-full border-2 shadow-lg mb-1 bg-gray-900 overflow-hidden
             ${isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700')}
           `}>
              <img
@@ -206,9 +211,9 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
              />
           </div>
 
-          {/* Name Tag - 50% text size reduction */}
-          <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700 text-white rounded px-1 py-0.5 shadow-xl min-w-[30px] text-center">
-             <div className="font-bold text-[0.4rem] truncate max-w-[50px] text-gray-100">{player.name}</div>
+          {/* Name Tag - Doubled text size */}
+          <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700 text-white rounded px-2 py-1 shadow-xl min-w-[60px] text-center">
+             <div className="font-bold text-[0.8rem] truncate max-w-[100px] text-gray-100">{player.name}</div>
           </div>
 
           {/* Reveal Result - Shown below name */}
@@ -247,7 +252,58 @@ interface Table3DProps {
   myId: string;
 }
 
-export const Table3D: React.FC<Table3DProps> = ({ players, status, average, myId }) => {
+// Camera animation component
+const CameraController = forwardRef<{ resetCamera: () => void }>((props, ref) => {
+  const { camera } = useThree();
+  const controlsRef = useRef<OrbitControlsImpl>(null);
+  const isAnimating = useRef(false);
+  const targetPosition = useRef(new THREE.Vector3(0, 9, 13));
+  const targetTarget = useRef(new THREE.Vector3(0, 0, 0));
+
+  useImperativeHandle(ref, () => ({
+    resetCamera: () => {
+      isAnimating.current = true;
+      targetPosition.current.set(0, 9, 13);
+      targetTarget.current.set(0, 0, 0);
+    }
+  }));
+
+  useFrame(() => {
+    if (isAnimating.current && controlsRef.current) {
+      // Smoothly interpolate camera position
+      camera.position.lerp(targetPosition.current, 0.1);
+      controlsRef.current.target.lerp(targetTarget.current, 0.1);
+
+      // Check if close enough to stop animating
+      if (camera.position.distanceTo(targetPosition.current) < 0.01) {
+        isAnimating.current = false;
+        camera.position.copy(targetPosition.current);
+        controlsRef.current.target.copy(targetTarget.current);
+      }
+
+      controlsRef.current.update();
+    }
+  });
+
+  return (
+    <OrbitControls
+      ref={controlsRef}
+      enablePan={false}
+      enableZoom={false}
+      enableDamping
+      dampingFactor={0.05}
+    />
+  );
+});
+
+export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, average, myId }, ref) => {
+  const cameraControllerRef = useRef<{ resetCamera: () => void }>(null);
+
+  useImperativeHandle(ref, () => ({
+    resetCamera: () => {
+      cameraControllerRef.current?.resetCamera();
+    }
+  }));
   
   const { feltShape, railShape, feltTexture } = useMemo(() => {
     const width = TABLE_WIDTH; 
@@ -280,7 +336,7 @@ export const Table3D: React.FC<Table3DProps> = ({ players, status, average, myId
 
   return (
     <div className="w-full h-full absolute top-0 left-0 z-0 bg-[#0a0a0a]">
-      <Canvas shadows camera={{ position: [0, 12, 10], fov: 30 }}>
+      <Canvas shadows camera={{ position: [0, 9, 13], fov: 30 }}>
         <color attach="background" args={['#0a0a0a']} />
         
         {/* --- RADICAL LIGHTING SETUP --- */}
@@ -311,15 +367,10 @@ export const Table3D: React.FC<Table3DProps> = ({ players, status, average, myId
         
         <Suspense fallback={<Loader />}>
             <Environment preset="studio" blur={1} />
-            
-            <PresentationControls
-              global
-              zoom={0.8}
-              rotation={[0, 0, 0]}
-              polar={[0, Math.PI / 4]}
-              azimuth={[-Math.PI / 4, Math.PI / 4]}
-            >
-              <group position={[0, -1, 0]}>
+
+            <CameraController ref={cameraControllerRef} />
+
+            <group position={[0, -1, 0]}>
                   
                   {/* RAIL */}
                   <mesh receiveShadow castShadow position={[0, -0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -391,11 +442,10 @@ export const Table3D: React.FC<Table3DProps> = ({ players, status, average, myId
                   })}
 
               </group>
-            </PresentationControls>
-            
+
             <ContactShadows position={[0, -1.05, 0]} opacity={0.6} scale={40} blur={2.5} far={4} color="#000000" />
         </Suspense>
       </Canvas>
     </div>
   );
-};
+});

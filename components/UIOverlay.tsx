@@ -1,7 +1,7 @@
 import React from 'react';
 import { GameState, GameStatus } from '../types';
 import { FIBONACCI_DECK } from '../constants';
-import { Users, RotateCcw, Eye, Info } from 'lucide-react';
+import { Users, RotateCcw, Eye, Info, RefreshCw } from 'lucide-react';
 
 interface UIOverlayProps {
   myId: string;
@@ -9,6 +9,7 @@ interface UIOverlayProps {
   onVote: (val: string) => void;
   onReveal: () => void;
   onReset: () => void;
+  onResetCamera: () => void;
 }
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
@@ -17,6 +18,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onVote,
   onReveal,
   onReset,
+  onResetCamera,
 }) => {
   const me = gameState.players.find((p) => p.id === myId);
   const isHost = me?.isHost;
@@ -68,9 +70,18 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
       )}
 
       {/* Bottom Deck */}
-      <div className="pointer-events-auto pb-6 pt-10 px-4 flex justify-center items-end bg-gradient-to-t from-black via-black/80 to-transparent">
+      <div className="pointer-events-auto pb-6 pt-10 px-4 bg-gradient-to-t from-black via-black/80 to-transparent relative">
+         {/* Camera Reset Button - Bottom Left - Absolute positioned */}
+         <button
+           onClick={onResetCamera}
+           className="absolute left-4 bottom-10 bg-gray-800/80 hover:bg-gray-700/90 text-white p-3 rounded-lg backdrop-blur-md border border-gray-600/50 transition-all transform hover:scale-105 shadow-lg z-10"
+           title="Reset Camera Position"
+         >
+           <RefreshCw size={20} />
+         </button>
+
          {/* Added pt-12 and items-end to allow space for the pop-up animation without clipping */}
-         <div className="flex gap-3 overflow-x-auto max-w-full pb-4 px-4 pt-12 items-end scrollbar-hide mask-fade-sides">
+         <div className="flex gap-3 justify-center pb-4 px-4 pt-12 items-end">
             {FIBONACCI_DECK.map((val) => {
               const isSelected = myVote === val;
               return (
@@ -81,19 +92,19 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                     relative group flex flex-col items-center justify-center
                     w-14 h-20 md:w-16 md:h-24 rounded-lg border shadow-2xl shrink-0
                     transition-all duration-200 ease-out
-                    ${isSelected 
-                      ? 'bg-blue-600 border-blue-400 -translate-y-6 scale-110 z-20 shadow-blue-500/50 ring-2 ring-white' 
+                    ${isSelected
+                      ? 'bg-blue-600 border-blue-400 -translate-y-6 scale-110 z-20 shadow-blue-500/50 ring-2 ring-white'
                       : 'bg-white border-gray-400 hover:-translate-y-3 hover:bg-gray-50'
                     }
                   `}
                 >
                   {/* Card inner design */}
                   <div className={`
-                    absolute inset-1 rounded border 
+                    absolute inset-1 rounded border
                     ${isSelected ? 'border-blue-400' : 'border-gray-200'}
                     flex items-center justify-center
                   `}>
-                      <span className={`text-2xl md:text-3xl font-bold font-mono ${['?', '☕'].includes(val) ? 'text-gray-500' : 'text-gray-900'}`}>
+                      <span className={`text-2xl md:text-3xl font-bold font-mono ${isSelected ? 'text-white' : (['?', '☕'].includes(val) ? 'text-gray-500' : 'text-gray-900')}`}>
                         {val}
                       </span>
                   </div>

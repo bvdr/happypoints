@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useGameSession } from './services/mockSocketService';
-import { Table3D } from './components/Table3D';
+import { Table3D, Table3DRef } from './components/Table3D';
 import { UIOverlay } from './components/UIOverlay';
 import { Users, Play, Link as LinkIcon, Copy } from 'lucide-react';
 
@@ -16,7 +16,8 @@ const getHashParams = () => {
 const App = () => {
   const [name, setName] = useState('');
   const [started, setStarted] = useState(false);
-  
+  const table3DRef = useRef<Table3DRef>(null);
+
   // Router state
   const [urlParams, setUrlParams] = useState(getHashParams());
   
@@ -103,20 +104,22 @@ const App = () => {
   return (
     <div className="w-full h-screen relative overflow-hidden bg-gray-900">
       {/* 3D Scene */}
-      <Table3D 
-        players={gameState.players} 
-        status={gameState.status} 
+      <Table3D
+        ref={table3DRef}
+        players={gameState.players}
+        status={gameState.status}
         average={gameState.average}
         myId={myId}
       />
 
       {/* 2D Overlay */}
-      <UIOverlay 
+      <UIOverlay
         myId={myId}
         gameState={gameState}
         onVote={vote}
         onReveal={revealVotes}
         onReset={resetRound}
+        onResetCamera={() => table3DRef.current?.resetCamera()}
       />
 
       {/* Share Floating Button */}

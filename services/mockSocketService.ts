@@ -13,14 +13,41 @@ const DEFAULT_STATE: GameState = {
   aiSummary: null,
 };
 
+// Get session state from localStorage (shared across all tabs)
+const getSessionState = (sessionId: string): GameState => {
+  const key = `poker_session_${sessionId}`;
+  const stored = localStorage.getItem(key);
+  if (stored) {
+    try {
+      return JSON.parse(stored);
+    } catch (e) {
+      console.error('Failed to parse session state:', e);
+    }
+  }
+  return { ...DEFAULT_STATE, sessionId };
+};
+
+// Save session state to localStorage (shared across all tabs)
+const saveSessionState = (state: GameState) => {
+  const key = `poker_session_${state.sessionId}`;
+  localStorage.setItem(key, JSON.stringify(state));
+};
+
 export const useGameSession = (initialPlayerName: string, sessionId: string, isHost: boolean) => {
-  const [gameState, setGameState] = useState<GameState>({
-    ...DEFAULT_STATE,
-    sessionId,
-  });
+  // Initialize from localStorage to get shared session state
+  const [gameState, setGameState] = useState<GameState>(() => getSessionState(sessionId));
 
   const [myId] = useState(() => Math.random().toString(36).substring(2, 9));
   const [channel] = useState(() => new BroadcastChannel(CHANNEL_NAME));
+
+  // Helper to update state both locally and in localStorage
+  const updateGameState = useCallback((updater: (prev: GameState) => GameState) => {
+    setGameState(prev => {
+      const newState = updater(prev);
+      saveSessionState(newState);
+      return newState;
+    });
+  }, []);
 
   // Helper to broadcast updates
   const broadcast = useCallback((msg: SocketMessage) => {
@@ -31,49 +58,55 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
 
   const joinGame = useCallback(() => {
     const now = Date.now();
-    const newPlayer: Player = {
-      id: myId,
-      name: initialPlayerName,
-      isHost,
-      vote: null,
-      joinedAt: now, // Track join time for host succession
-      isDisconnected: false
-    };
 
-    setGameState(prev => {
+    updateGameState(prev => {
       // Avoid duplicates
       if (prev.players.find(p => p.id === myId)) return prev;
-      return { ...prev, players: [...prev.players, newPlayer] };
+
+      // Determine if this player should be host: first player in the session is host
+      const shouldBeHost = prev.players.length === 0;
+
+      const newPlayer: Player = {
+        id: myId,
+        name: initialPlayerName,
+        isHost: shouldBeHost,
+        vote: null,
+        joinedAt: now,
+        isDisconnected: false
+      };
+
+      const newState = { ...prev, players: [...prev.players, newPlayer] };
+
+      // Broadcast join to other tabs
+      broadcast({ type: 'JOIN', payload: newPlayer });
+
+      return newState;
     });
-
-    broadcast({ type: 'JOIN', payload: newPlayer });
-
-    // If I am new, ask for current state
-    if (!isHost) {
-      broadcast({ type: 'SYNC_REQUEST', payload: null });
-    }
-  }, [broadcast, myId, initialPlayerName, isHost]);
+  }, [broadcast, myId, initialPlayerName, updateGameState]);
 
   const vote = useCallback((card: string) => {
-    setGameState(prev => {
-      const updatedPlayers = prev.players.map(p => 
+    updateGameState(prev => {
+      const updatedPlayers = prev.players.map(p =>
         p.id === myId ? { ...p, vote: card as any } : p
       );
       return { ...prev, players: updatedPlayers };
     });
     broadcast({ type: 'VOTE', payload: { id: myId, vote: card } });
-  }, [broadcast, myId]);
+  }, [broadcast, myId, updateGameState]);
 
   const revealVotes = useCallback(async () => {
-    if (!isHost) return;
-    
+    // Check if I'm host by looking at current state
+    const currentState = getSessionState(sessionId);
+    const me = currentState.players.find(p => p.id === myId);
+    if (!me?.isHost) return;
+
     // Calculate Average (ignoring non-numbers)
     let sum = 0;
     let count = 0;
     const numericVotes: number[] = [];
     const rawVotes: string[] = [];
 
-    gameState.players.forEach(p => {
+    currentState.players.forEach(p => {
       if (p.vote && p.vote !== '?' && p.vote !== '☕') {
         const val = parseInt(p.vote);
         if (!isNaN(val)) {
@@ -97,25 +130,19 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
       aiSummary: summary
     };
 
-    setGameState(prev => ({ ...prev, ...newState }));
+    updateGameState(prev => ({ ...prev, ...newState }));
     broadcast({ type: 'REVEAL', payload: newState });
 
-  }, [broadcast, isHost, gameState.players]);
+  }, [broadcast, myId, sessionId, updateGameState]);
 
   const resetRound = useCallback(() => {
-    if (!isHost) return;
-    const newState = {
-      status: GameStatus.VOTING,
-      average: null,
-      aiSummary: null,
-      players: gameState.players.map(p => ({ ...p, vote: null })) // Clear votes locally first logic
-    };
-    
-    // Actually we need to clear everyone's vote in the broadcast
-    broadcast({ type: 'RESET', payload: null });
-    
-    // Local update
-    setGameState(prev => ({
+    // Check if I'm host by looking at current state
+    const currentState = getSessionState(sessionId);
+    const me = currentState.players.find(p => p.id === myId);
+    if (!me?.isHost) return;
+
+    // Update and broadcast
+    updateGameState(prev => ({
         ...prev,
         status: GameStatus.VOTING,
         average: null,
@@ -123,7 +150,8 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
         players: prev.players.map(p => ({...p, vote: null}))
     }));
 
-  }, [broadcast, isHost, gameState.players]);
+    broadcast({ type: 'RESET', payload: null });
+  }, [broadcast, myId, sessionId, updateGameState]);
 
   // --- Event Listener ---
 
@@ -133,37 +161,21 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
 
       switch (type) {
         case 'JOIN':
-          setGameState(prev => {
+          updateGameState(prev => {
             if (prev.players.find(p => p.id === payload.id)) return prev;
             return { ...prev, players: [...prev.players, payload] };
           });
-          // If I am host, I should sync back the current state to the new joiner
-          if (isHost) {
-             // We can't do this immediately inside the reducer, so we trigger an effect or just send it
-             // Sending SYNC_RESPONSE with current state (hacky but works for broadcast channel)
-             setTimeout(() => {
-                 channel.postMessage({
-                     type: 'SYNC_RESPONSE',
-                     payload: {
-                         status: gameState.status,
-                         players: [...gameState.players, payload], // Ensure new player is included
-                         average: gameState.average,
-                         aiSummary: gameState.aiSummary
-                     }
-                 });
-             }, 100);
-          }
           break;
 
         case 'VOTE':
-          setGameState(prev => ({
+          updateGameState(prev => ({
             ...prev,
             players: prev.players.map(p => p.id === payload.id ? { ...p, vote: payload.vote } : p)
           }));
           break;
 
         case 'REVEAL':
-          setGameState(prev => ({
+          updateGameState(prev => ({
             ...prev,
             status: GameStatus.REVEALED,
             average: payload.average,
@@ -172,7 +184,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
           break;
 
         case 'RESET':
-          setGameState(prev => ({
+          updateGameState(prev => ({
             ...prev,
             status: GameStatus.VOTING,
             average: null,
@@ -181,35 +193,9 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
           }));
           break;
 
-        case 'SYNC_REQUEST':
-           if (isHost) {
-             channel.postMessage({
-                 type: 'SYNC_RESPONSE',
-                 payload: gameState
-             });
-           }
-           break;
-
-        case 'SYNC_RESPONSE':
-           // Merge state
-           setGameState(prev => {
-             // Simple merge strategy: trust the host's payload
-             // But keep my own identity if it got lost (shouldn't happen)
-             const myPlayer = prev.players.find(p => p.id === myId);
-             let mergedPlayers = payload.players;
-             if (myPlayer && !mergedPlayers.find((p: Player) => p.id === myId)) {
-                 mergedPlayers.push(myPlayer);
-             }
-             return {
-                 ...payload,
-                 players: mergedPlayers
-             };
-           });
-           break;
-
         case 'LEAVE':
-          // Mark player as disconnected, then remove after delay
-          setGameState(prev => ({
+          // Mark player as disconnected
+          updateGameState(prev => ({
             ...prev,
             players: prev.players.map(p =>
               p.id === payload.id ? { ...p, isDisconnected: true } : p
@@ -218,7 +204,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
 
           // After 3 seconds, remove the player completely
           setTimeout(() => {
-            setGameState(prev => {
+            updateGameState(prev => {
               const remainingPlayers = prev.players.filter(p => p.id !== payload.id);
 
               // If the host left, promote the next player (oldest by joinedAt)
@@ -245,7 +231,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     return () => {
       channel.onmessage = null;
     };
-  }, [channel, joinGame, isHost, myId]); // Dependencies intentionally simplified to avoid loops
+  }, [channel, joinGame, updateGameState]); // Dependencies intentionally simplified to avoid loops
 
   // --- Window Close Detection ---
   // Detect when tab/window is closed and broadcast LEAVE message

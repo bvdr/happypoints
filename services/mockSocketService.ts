@@ -19,7 +19,12 @@ const getSessionState = (sessionId: string): GameState => {
   const stored = localStorage.getItem(key);
   if (stored) {
     try {
-      return JSON.parse(stored);
+      const state = JSON.parse(stored);
+      // Filter out any disconnected players that shouldn't be shown to new joiners
+      return {
+        ...state,
+        players: state.players.filter((p: Player) => !p.isDisconnected)
+      };
     } catch (e) {
       console.error('Failed to parse session state:', e);
     }

@@ -90,13 +90,16 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
   }, [broadcast, myId, initialPlayerName, updateGameState]);
 
   const vote = useCallback((card: string) => {
+    // If empty string is sent, treat it as clearing the vote (set to null)
+    const voteValue = card === '' ? null : card;
+
     updateGameState(prev => {
       const updatedPlayers = prev.players.map(p =>
-        p.id === myId ? { ...p, vote: card as any } : p
+        p.id === myId ? { ...p, vote: voteValue as any } : p
       );
       return { ...prev, players: updatedPlayers };
     });
-    broadcast({ type: 'VOTE', payload: { id: myId, vote: card } });
+    broadcast({ type: 'VOTE', payload: { id: myId, vote: voteValue } });
   }, [broadcast, myId, updateGameState]);
 
   const revealVotes = useCallback(async () => {

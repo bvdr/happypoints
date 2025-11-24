@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { Player, GameStatus } from '../types';
 import { FELT_COLOR, RAIL_COLOR, CARD_BACK_COLOR, CARD_FRONT_COLOR, TABLE_WIDTH, TABLE_DEPTH, FELT_RING_COLOR } from '../constants';
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { Check } from 'lucide-react';
 
 export interface Table3DRef {
   resetCamera: () => void;
@@ -248,7 +249,26 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
             </div>
           )}
 
-          {/* Reveal Result - Shown below name */}
+          {/* Voting Status - Show special cards (? and ☕) or green checkmark for numeric votes */}
+          {status === GameStatus.VOTING && player.vote && !player.isDisconnected && (
+             <>
+               {player.vote === '?' ? (
+                 <div className="mt-1 bg-yellow-500 text-white font-bold text-lg rounded-full w-7 h-7 flex items-center justify-center shadow-lg border-2 border-yellow-300 animate-in zoom-in">
+                   ?
+                 </div>
+               ) : player.vote === '☕' ? (
+                 <div className="mt-1 text-3xl animate-in zoom-in">
+                   ☕
+                 </div>
+               ) : (
+                 <div className="mt-1 bg-emerald-500 text-white rounded-full p-1 shadow-lg border-2 border-emerald-300 animate-in zoom-in">
+                   <Check size={16} strokeWidth={3} />
+                 </div>
+               )}
+             </>
+          )}
+
+          {/* Reveal Result - Shown below name when cards are revealed */}
           {status === GameStatus.REVEALED && player.vote && !player.isDisconnected && (
              <div className="mt-1 bg-blue-600 text-white font-bold text-lg px-2 py-0.5 rounded shadow-lg border border-blue-400 min-w-[2rem] text-center animate-in zoom-in slide-in-from-top-2">
                  {player.vote}
@@ -257,7 +277,8 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
         </div>
       </Html>
 
-      {player.vote && !player.isDisconnected && (
+      {/* Only show 3D cards when revealed */}
+      {status === GameStatus.REVEALED && player.vote && !player.isDisconnected && (
         <Card3D
           value={player.vote}
           position={cardPos}

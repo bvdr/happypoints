@@ -87,7 +87,14 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
               return (
                 <button
                   key={val}
-                  onClick={() => onVote(val)}
+                  onClick={() => {
+                    // Toggle: if clicking the same card again, deselect it by sending empty string
+                    if (isSelected) {
+                      onVote('');
+                    } else {
+                      onVote(val);
+                    }
+                  }}
                   className={`
                     relative group flex flex-col items-center justify-center
                     w-14 h-20 md:w-16 md:h-24 rounded-lg border shadow-2xl shrink-0

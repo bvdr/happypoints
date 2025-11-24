@@ -178,6 +178,8 @@ interface PlayerSeatProps {
 }
 
 const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe }) => {
+  const groupRef = useRef<THREE.Group>(null);
+
   // SVG format for crisp rendering at any size
   // Using player ID + name as seed to ensure uniqueness (even if multiple players have same name)
   const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.id + player.name)}&format=svg`;
@@ -190,14 +192,33 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
   ];
   const cardRot: [number, number, number] = [-Math.PI / 2, rotation[1], 0];
 
+  // Animation for disconnected players: fade to transparent, then elevate and disappear (teleportation effect)
+  useFrame(() => {
+    if (groupRef.current && player.isDisconnected) {
+      // Elevate upward during fade out
+      groupRef.current.position.y = THREE.MathUtils.lerp(
+        groupRef.current.position.y,
+        position[1] + 5, // Float upward
+        0.05
+      );
+    }
+  });
+
   return (
-    <group>
-      <Html position={[position[0], 1.5, position[2]]} center sprite distanceFactor={8} zIndexRange={[100, 0]}>
-        <div className={`flex flex-col items-center transition-all duration-300 ${isMe ? 'scale-110' : 'scale-100'}`}>
+    <group ref={groupRef} position={[position[0], position[1], position[2]]}>
+      <Html position={[0, 1.5, 0]} center sprite distanceFactor={8} zIndexRange={[100, 0]}>
+        <div
+          className={`
+            flex flex-col items-center transition-all duration-300
+            ${isMe ? 'scale-110' : 'scale-100'}
+            ${player.isDisconnected ? 'animate-[fade-out-teleport_3s_ease-in-out_forwards]' : ''}
+          `}
+        >
           {/* Avatar - Doubled size: w-16 h-16 (64px) */}
           <div className={`
             relative w-16 h-16 rounded-full border-2 shadow-lg mb-1 bg-gray-900 overflow-hidden
             ${isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700')}
+            ${player.isDisconnected ? 'opacity-30' : ''}
           `}>
              <img
                src={avatarUrl}
@@ -213,12 +234,22 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
           </div>
 
           {/* Name Tag - Doubled text size */}
-          <div className="bg-gray-900/90 backdrop-blur-md border border-gray-700 text-white rounded px-2 py-1 shadow-xl min-w-[60px] text-center">
+          <div className={`
+            bg-gray-900/90 backdrop-blur-md border border-gray-700 text-white rounded px-2 py-1 shadow-xl min-w-[60px] text-center
+            ${player.isDisconnected ? 'opacity-30' : ''}
+          `}>
              <div className="font-bold text-[0.8rem] truncate max-w-[100px] text-gray-100">{player.name}</div>
           </div>
 
+          {/* Disconnected indicator */}
+          {player.isDisconnected && (
+            <div className="mt-1 bg-red-600/80 text-white text-xs px-2 py-0.5 rounded shadow-lg border border-red-400">
+              Disconnected
+            </div>
+          )}
+
           {/* Reveal Result - Shown below name */}
-          {status === GameStatus.REVEALED && player.vote && (
+          {status === GameStatus.REVEALED && player.vote && !player.isDisconnected && (
              <div className="mt-1 bg-blue-600 text-white font-bold text-lg px-2 py-0.5 rounded shadow-lg border border-blue-400 min-w-[2rem] text-center animate-in zoom-in slide-in-from-top-2">
                  {player.vote}
              </div>
@@ -226,8 +257,8 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
         </div>
       </Html>
 
-      {player.vote && (
-        <Card3D 
+      {player.vote && !player.isDisconnected && (
+        <Card3D
           value={player.vote}
           position={cardPos}
           rotation={cardRot}

@@ -30,7 +30,16 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
   // --- Actions ---
 
   const joinGame = useCallback(() => {
-    const newPlayer: Player = { id: myId, name: initialPlayerName, isHost, vote: null };
+    const now = Date.now();
+    const newPlayer: Player = {
+      id: myId,
+      name: initialPlayerName,
+      isHost,
+      vote: null,
+      joinedAt: now, // Track join time for host succession
+      lastHeartbeat: now, // Initialize heartbeat
+      isDisconnected: false
+    };
 
     setGameState(prev => {
       // Avoid duplicates
@@ -134,14 +143,14 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
              // We can't do this immediately inside the reducer, so we trigger an effect or just send it
              // Sending SYNC_RESPONSE with current state (hacky but works for broadcast channel)
              setTimeout(() => {
-                 channel.postMessage({ 
-                     type: 'SYNC_RESPONSE', 
-                     payload: { 
-                         status: gameState.status, 
+                 channel.postMessage({
+                     type: 'SYNC_RESPONSE',
+                     payload: {
+                         status: gameState.status,
                          players: [...gameState.players, payload], // Ensure new player is included
                          average: gameState.average,
                          aiSummary: gameState.aiSummary
-                     } 
+                     }
                  });
              }, 100);
           }
@@ -175,9 +184,9 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
 
         case 'SYNC_REQUEST':
            if (isHost) {
-             channel.postMessage({ 
-                 type: 'SYNC_RESPONSE', 
-                 payload: gameState 
+             channel.postMessage({
+                 type: 'SYNC_RESPONSE',
+                 payload: gameState
              });
            }
            break;
@@ -198,6 +207,35 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
              };
            });
            break;
+
+        case 'HEARTBEAT':
+          // Update heartbeat timestamp for the player
+          setGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p =>
+              p.id === payload.id ? { ...p, lastHeartbeat: Date.now(), isDisconnected: false } : p
+            )
+          }));
+          break;
+
+        case 'LEAVE':
+          // Remove player from the game
+          setGameState(prev => {
+            const remainingPlayers = prev.players.filter(p => p.id !== payload.id);
+
+            // If the host left, promote the next player (oldest by joinedAt)
+            if (remainingPlayers.length > 0) {
+              const oldHost = prev.players.find(p => p.id === payload.id)?.isHost;
+              if (oldHost) {
+                // Sort by joinedAt to find the next in line
+                const sortedPlayers = [...remainingPlayers].sort((a, b) => a.joinedAt - b.joinedAt);
+                sortedPlayers[0].isHost = true;
+              }
+            }
+
+            return { ...prev, players: remainingPlayers };
+          });
+          break;
       }
     };
 
@@ -209,6 +247,83 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
       channel.onmessage = null;
     };
   }, [channel, joinGame, isHost, myId]); // Dependencies intentionally simplified to avoid loops
+
+  // --- Heartbeat System ---
+  // Send heartbeat every 2 seconds and update own timestamp
+  useEffect(() => {
+    const heartbeatInterval = setInterval(() => {
+      // Update my own heartbeat locally first
+      setGameState(prev => ({
+        ...prev,
+        players: prev.players.map(p =>
+          p.id === myId ? { ...p, lastHeartbeat: Date.now(), isDisconnected: false } : p
+        )
+      }));
+
+      // Broadcast to other tabs
+      broadcast({ type: 'HEARTBEAT', payload: { id: myId } });
+    }, 2000);
+
+    return () => clearInterval(heartbeatInterval);
+  }, [broadcast, myId]);
+
+  // --- Disconnect Detection ---
+  // Check for disconnected players every 3 seconds
+  useEffect(() => {
+    const disconnectCheckInterval = setInterval(() => {
+      const now = Date.now();
+      const DISCONNECT_THRESHOLD = 6000; // 6 seconds without heartbeat = disconnected
+      const REMOVAL_DELAY = 3000; // Remove 3 seconds after marking as disconnected
+
+      setGameState(prev => {
+        let playersUpdated = false;
+        let playersToRemove: string[] = [];
+
+        const updatedPlayers = prev.players.map(p => {
+          const timeSinceHeartbeat = now - p.lastHeartbeat;
+
+          // Mark as disconnected if no heartbeat for 6 seconds
+          if (timeSinceHeartbeat > DISCONNECT_THRESHOLD && !p.isDisconnected) {
+            playersUpdated = true;
+            return { ...p, isDisconnected: true };
+          }
+
+          // Mark for removal if disconnected for more than 3 seconds
+          if (p.isDisconnected && timeSinceHeartbeat > DISCONNECT_THRESHOLD + REMOVAL_DELAY) {
+            playersToRemove.push(p.id);
+          }
+
+          return p;
+        });
+
+        // Remove disconnected players and handle host succession
+        if (playersToRemove.length > 0) {
+          playersUpdated = true;
+          const remainingPlayers = updatedPlayers.filter(p => !playersToRemove.includes(p.id));
+
+          // Check if host was removed, promote next player
+          if (remainingPlayers.length > 0) {
+            const removedHost = updatedPlayers.find(p => playersToRemove.includes(p.id) && p.isHost);
+            if (removedHost) {
+              const sortedPlayers = [...remainingPlayers].sort((a, b) => a.joinedAt - b.joinedAt);
+              sortedPlayers[0].isHost = true;
+            }
+          }
+
+          // Broadcast LEAVE for each removed player
+          playersToRemove.forEach(id => {
+            broadcast({ type: 'LEAVE', payload: { id } });
+          });
+
+          return { ...prev, players: remainingPlayers };
+        }
+
+        return playersUpdated ? { ...prev, players: updatedPlayers } : prev;
+      });
+    }, 3000);
+
+    return () => clearInterval(disconnectCheckInterval);
+  }, [broadcast]);
 
   return {
     myId,

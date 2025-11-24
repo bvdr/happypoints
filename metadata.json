@@ -1,0 +1,5 @@
+{
+  "name": "Gemini Planning Poker 3D",
+  "description": "A real-time, 3D planning poker application for development teams. Features a casino-style interface, Fibonacci estimation, and AI-powered insights using Gemini.",
+  "requestFramePermissions": []
+}

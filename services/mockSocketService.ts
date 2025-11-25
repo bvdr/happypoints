@@ -369,6 +369,30 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     };
   }, [channel, joinGame, updateGameState]); // Dependencies intentionally simplified to avoid loops
 
+  // --- Auto-Reveal: 5 seconds after all users voted ---
+  useEffect(() => {
+    // Only run if we're the host and game is in voting status
+    const me = gameState.players.find(p => p.id === myId);
+    if (!me?.isHost || gameState.status !== GameStatus.VOTING) {
+      return;
+    }
+
+    // Check if all players have voted (at least 2 players required)
+    const activePlayers = gameState.players.filter(p => !p.isDisconnected);
+    if (activePlayers.length < 2) return;
+
+    const allVoted = activePlayers.every(p => p.vote !== null);
+
+    if (allVoted) {
+      // Set a 5-second timer to auto-reveal
+      const timer = setTimeout(() => {
+        revealVotes();
+      }, 5000);
+
+      return () => clearTimeout(timer);
+    }
+  }, [gameState.players, gameState.status, myId, revealVotes]);
+
   // --- Window Close Detection ---
   // Detect when tab/window is closed and broadcast LEAVE message
   useEffect(() => {

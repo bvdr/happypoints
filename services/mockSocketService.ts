@@ -193,7 +193,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
 
     if (throwData) {
       // Damage the target player
-      const damage = 20; // Each emoji hit does 20 damage
+      const damage = 1; // Each emoji hit does 1 damage
 
       updateGameState(prev => {
         const updatedPlayers = prev.players.map(p => {

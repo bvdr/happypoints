@@ -37,3 +37,9 @@ CORS_ORIGIN = "http://localhost:3000"
 
 [env.production.vars]
 CORS_ORIGIN = "https://happypoints.app"
+
+# Cloudflare Pages configuration
+pages_build_output_dir = "dist"
+
+[pages]
+production_branch = "main"

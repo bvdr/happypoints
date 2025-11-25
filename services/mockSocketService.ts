@@ -69,7 +69,8 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
       // Avoid duplicates
       if (prev.players.find(p => p.id === myId)) return prev;
 
-      // Determine if this player should be host: first player in the session is host
+      // Determine if this player should be host:
+      // They should be host if they are the only player (first to join or everyone else left)
       const shouldBeHost = prev.players.length === 0;
 
       const newPlayer: Player = {

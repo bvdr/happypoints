@@ -132,17 +132,30 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     // Use 2 decimal places for precision
     const avg = count > 0 ? parseFloat((sum / count).toFixed(2)) : 0;
 
-    // Call Gemini for insight
-    const summary = await generateVoteSummary(rawVotes);
-
-    const newState = {
+    // Immediately reveal with average, without AI summary
+    const initialState = {
       status: GameStatus.REVEALED,
       average: avg,
-      aiSummary: summary
+      aiSummary: null // Will be populated later
     };
 
-    updateGameState(prev => ({ ...prev, ...newState }));
-    broadcast({ type: 'REVEAL', payload: newState });
+    updateGameState(prev => ({ ...prev, ...initialState }));
+    broadcast({ type: 'REVEAL', payload: initialState });
+
+    // Fetch AI summary asynchronously and update once ready
+    generateVoteSummary(rawVotes).then(summary => {
+      const updatedState = {
+        status: GameStatus.REVEALED,
+        average: avg,
+        aiSummary: summary
+      };
+
+      updateGameState(prev => ({ ...prev, aiSummary: summary }));
+      broadcast({ type: 'REVEAL', payload: updatedState });
+    }).catch(error => {
+      console.error('Failed to generate AI summary:', error);
+      // Keep the revealed state even if AI fails
+    });
 
   }, [broadcast, myId, sessionId, updateGameState]);
 

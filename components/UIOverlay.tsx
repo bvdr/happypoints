@@ -64,13 +64,25 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
       </div>
 
       {/* AI Summary Toast (Absolute Top Center) */}
-      {gameState.status === GameStatus.REVEALED && gameState.aiSummary && (
+      {gameState.status === GameStatus.REVEALED && (
         <div className="absolute top-24 left-1/2 transform -translate-x-1/2 pointer-events-auto bg-indigo-950/90 text-indigo-100 border border-indigo-500/50 px-6 py-4 rounded-xl max-w-md text-center shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-top-4 duration-500 z-50">
            <div className="flex justify-center mb-2 text-indigo-400">
              <Info size={20} />
            </div>
-           <p className="text-lg font-light leading-snug italic">"{gameState.aiSummary}"</p>
-           <div className="mt-2 text-[10px] font-bold text-indigo-500 uppercase tracking-widest">AI Analysis</div>
+           {gameState.aiSummary ? (
+             <>
+               <p className="text-lg font-light leading-snug italic">"{gameState.aiSummary}"</p>
+               <div className="mt-2 text-[10px] font-bold text-indigo-500 uppercase tracking-widest">AI Analysis</div>
+             </>
+           ) : (
+             <>
+               <div className="flex items-center justify-center gap-2">
+                 <div className="animate-spin h-4 w-4 border-2 border-indigo-400 border-t-transparent rounded-full"></div>
+                 <p className="text-sm font-light">Analyzing votes...</p>
+               </div>
+               <div className="mt-2 text-[10px] font-bold text-indigo-500 uppercase tracking-widest">AI Analysis</div>
+             </>
+           )}
         </div>
       )}
 

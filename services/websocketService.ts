@@ -43,9 +43,8 @@ export const useGameSession = (
       // Local Wrangler dev server
       return `ws://localhost:8787/ws/${sessionId}`;
     } else {
-      // Production Cloudflare Worker
-      // This will be your deployed worker URL - update after deployment
-      const workerDomain = import.meta.env.VITE_WORKER_URL || 'planning-poker-worker.your-subdomain.workers.dev';
+      // Production Cloudflare Worker with custom domain
+      const workerDomain = import.meta.env.VITE_WORKER_URL || 'api.happypoints.app';
       return `wss://${workerDomain}/ws/${sessionId}`;
     }
   }, [sessionId]);

@@ -4,6 +4,11 @@ compatibility_date = "2024-11-25"
 compatibility_flags = ["nodejs_compat"]
 account_id = "4bfbdd8c267944d0b0cb8d49c862d34f"
 
+# Custom domain for worker
+routes = [
+  { pattern = "api.happypoints.app", custom_domain = true }
+]
+
 # Durable Object binding
 [[durable_objects.bindings]]
 name = "GAME_SESSION"

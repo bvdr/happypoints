@@ -9,6 +9,7 @@ import { Check } from 'lucide-react';
 import { EmojiThrow } from './EmojiThrow';
 import { LifeBar } from './LifeBar';
 import { MinusOneUp } from './MinusOneUp';
+import { VolumetricNumber } from './VolumetricNumber';
 
 export interface Table3DRef {
   resetCamera: () => void;
@@ -495,15 +496,7 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
                   {/* STATUS PILL */}
                   <group position={[0, 0.24, 0]}>
                     {status === GameStatus.REVEALED && average !== null ? (
-                        <group position={[0, 1.5, 0]}>
-                            <mesh>
-                              <boxGeometry args={[3.8, 0.8, 0.1]} />
-                              <meshBasicMaterial color="black" transparent opacity={0.8} />
-                            </mesh>
-                            <Text position={[0, 0, 0.06]} fontSize={0.35} color="#fbbf24" letterSpacing={0.1}>
-                              AVERAGE: {average.toFixed(2)}
-                            </Text>
-                        </group>
+                        <VolumetricNumber value={average} />
                     ) : (
                         <group>
                            {/* Flat text on table */}

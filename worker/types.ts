@@ -42,7 +42,7 @@ export type SocketMessage =
   | { type: 'RESET'; payload: null }
   | { type: 'LEAVE'; payload: { id: string } }
   | { type: 'THROW_EMOJI'; payload: EmojiThrow }
-  | { type: 'HIT_PLAYER'; payload: { throwId?: string; playerId: string; damage?: number; timestamp?: number; reset?: boolean } }
+  | { type: 'HIT_PLAYER'; payload: { throwId?: string; playerId: string; damage?: number; timestamp?: number; reset?: boolean; emoji?: string } }
   | { type: 'STATE_SYNC'; payload: GameState }
   | { type: 'ERROR'; payload: { message: string } };
 

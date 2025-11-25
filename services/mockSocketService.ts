@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { GameState, Player, GameStatus, SocketMessage } from '../types';
 import { generateVoteSummary } from './geminiService';
+import { flashEmojiFavicon } from '../utils/favicon';
 
 // Using BroadcastChannel to simulate sockets across tabs in the same browser
 const CHANNEL_NAME = 'poker_planning_channel';
@@ -236,7 +237,8 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
         payload: {
           playerId: throwData.toPlayerId,
           damage,
-          timestamp: Date.now()
+          timestamp: Date.now(),
+          emoji: throwData.emoji, // Include emoji for favicon change
         }
       });
 
@@ -353,6 +355,11 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
               )
             }));
           } else {
+            // If this player got hit and emoji is provided, change favicon for 3 seconds
+            if (payload.playerId === myId && payload.emoji) {
+              flashEmojiFavicon(payload.emoji);
+            }
+
             // Damage player
             updateGameState(prev => ({
               ...prev,

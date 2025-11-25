@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { GameState, Player, GameStatus, SocketMessage } from '../types';
 import { generateVoteSummary } from './geminiService';
+import { flashEmojiFavicon } from '../utils/favicon';
 
 const DEFAULT_STATE: GameState = {
   sessionId: '',
@@ -151,6 +152,7 @@ export const useGameSession = (
             playerId: throwData.toPlayerId,
             damage,
             timestamp: Date.now(),
+            emoji: throwData.emoji, // Include emoji for favicon change
           },
         });
 
@@ -285,6 +287,11 @@ export const useGameSession = (
                 ),
               }));
             } else {
+              // If this player got hit and emoji is provided, change favicon for 3 seconds
+              if (message.payload.playerId === myId && message.payload.emoji) {
+                flashEmojiFavicon(message.payload.emoji);
+              }
+
               setGameState(prev => ({
                 ...prev,
                 players: prev.players.map(p => {

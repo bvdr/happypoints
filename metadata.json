@@ -1,5 +1,5 @@
 {
-  "name": "Gemini Planning Poker 3D",
-  "description": "A real-time, 3D planning poker application for development teams. Features a casino-style interface, Fibonacci estimation, and AI-powered insights using Gemini.",
+  "name": "HappyPoints",
+  "description": "A free, serverless planning poker app for agile estimation. No backend required - just share a link and start voting with your team in real-time across browser tabs.",
   "requestFramePermissions": []
 }

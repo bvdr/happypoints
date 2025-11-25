@@ -192,8 +192,8 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
   const groupRef = useRef<THREE.Group>(null);
 
   // SVG format for crisp rendering at any size
-  // Using player ID + name as seed to ensure uniqueness (even if multiple players have same name)
-  const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.id + player.name)}&format=svg`;
+  // Using player ID as seed - the ID is the avatarSeed chosen by the user
+  const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.id)}&format=svg`;
 
   const handleClick = () => {
     // Don't allow clicking on yourself or disconnected players

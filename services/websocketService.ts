@@ -22,10 +22,12 @@ export const useGameSession = (
   initialPlayerName: string,
   sessionId: string,
   isHost: boolean,
-  selectedWeapon: string = '🏐'
+  selectedWeapon: string = '🏐',
+  avatarSeed?: string
 ) => {
   const [gameState, setGameState] = useState<GameState>({ ...DEFAULT_STATE, sessionId });
-  const [myId] = useState(() => Math.random().toString(36).substring(2, 9));
+  // Use avatarSeed as player ID if provided, otherwise generate random ID
+  const [myId] = useState(() => avatarSeed || Math.random().toString(36).substring(2, 9));
   const [isConnected, setIsConnected] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);

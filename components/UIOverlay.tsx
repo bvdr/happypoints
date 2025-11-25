@@ -34,7 +34,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
       {/* Top Bar */}
       <div className="pointer-events-auto p-4 flex justify-between items-start bg-gradient-to-b from-black/90 to-transparent z-20">
         <div>
-          <h1 className="text-white font-bold text-2xl tracking-tight drop-shadow-md">Planning Poker 3D</h1>
+          <h1 className="text-white font-bold text-2xl tracking-tight drop-shadow-md">HappyPoints</h1>
           <p className="text-gray-400 text-xs font-mono flex items-center gap-2 mt-1">
             <span className="bg-gray-800 px-2 py-1 rounded border border-gray-700 text-green-400">SESSION: {gameState.sessionId}</span>
             <span className="flex items-center gap-1"><Users size={12} /> {gameState.players.length}</span>

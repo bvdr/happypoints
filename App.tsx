@@ -19,7 +19,8 @@ const GameSession: React.FC<{
   sessionId: string;
   isHost: boolean;
   onCopyLink: () => void;
-}> = ({ playerName, sessionId, isHost, onCopyLink }) => {
+  avatarSeed: string;
+}> = ({ playerName, sessionId, isHost, onCopyLink, avatarSeed }) => {
   const table3DRef = useRef<Table3DRef>(null);
   // Weapon selection state - defaults to volleyball
   const [selectedWeapon, setSelectedWeapon] = useState('🏐');
@@ -28,7 +29,8 @@ const GameSession: React.FC<{
     playerName,
     sessionId,
     isHost,
-    selectedWeapon // Pass selected weapon to game session
+    selectedWeapon, // Pass selected weapon to game session
+    avatarSeed // Pass avatar seed to use as player ID for consistent avatars
   );
 
   return (
@@ -70,9 +72,14 @@ const GameSession: React.FC<{
 };
 
 const App = () => {
-  const [name, setName] = useState('');
+  // Load saved name from localStorage on mount
+  const [name, setName] = useState(() => localStorage.getItem('happypoints_name') || '');
   const [started, setStarted] = useState(false);
   const [confirmedName, setConfirmedName] = useState('');
+  // Avatar seed for DiceBear - can be randomized to change avatar
+  const [avatarSeed, setAvatarSeed] = useState(() =>
+    localStorage.getItem('happypoints_avatar_seed') || Math.random().toString(36).substring(2, 9)
+  );
 
   // Router state
   const [urlParams, setUrlParams] = useState(getHashParams());
@@ -88,12 +95,22 @@ const App = () => {
     e.preventDefault();
     if (!name.trim()) return;
 
+    // Save name and avatar seed to localStorage
+    localStorage.setItem('happypoints_name', name.trim());
+    localStorage.setItem('happypoints_avatar_seed', avatarSeed);
+
     setConfirmedName(name.trim());
 
     if (isHost) {
       window.location.hash = `session=${sessionId}`;
     }
     setStarted(true);
+  };
+
+  // Generate new random avatar
+  const changeAvatar = () => {
+    const newSeed = Math.random().toString(36).substring(2, 9);
+    setAvatarSeed(newSeed);
   };
 
   const copyLink = () => {
@@ -107,11 +124,30 @@ const App = () => {
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-green-900 to-black flex items-center justify-center p-4">
         <div className="bg-white/10 backdrop-blur-lg p-8 rounded-2xl shadow-2xl max-w-md w-full border border-white/20">
           <div className="text-center mb-8">
-            <h1 className="text-4xl font-bold text-white mb-2">Planning Poker 3D</h1>
+            <h1 className="text-4xl font-bold text-white mb-2">HappyPoints</h1>
             <p className="text-gray-300">Real-time estimation for agile teams</p>
           </div>
 
           <form onSubmit={handleStart} className="space-y-6">
+            {/* Avatar Selector */}
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={changeAvatar}
+                className="group relative w-24 h-24 rounded-full overflow-hidden border-4 border-gray-600 hover:border-green-500 transition-all cursor-pointer bg-white"
+                title="Click to change avatar"
+              >
+                <img
+                  src={`https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(avatarSeed)}&format=svg`}
+                  alt="Your avatar"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-bold">
+                  Change
+                </div>
+              </button>
+            </div>
+
             <div>
               <label className="block text-gray-300 text-sm font-bold mb-2" htmlFor="name">
                 Your Name
@@ -142,12 +178,6 @@ const App = () => {
             </button>
           </form>
 
-          <div className="mt-8 pt-6 border-t border-gray-700 text-center text-xs text-gray-500">
-            <p>Powered by React Three Fiber & Gemini API</p>
-            <p className="mt-1 text-orange-400/80">
-              Disclaimer: Demo uses local browser channels. Open multiple tabs to simulate players.
-            </p>
-          </div>
         </div>
       </div>
     );
@@ -159,6 +189,7 @@ const App = () => {
       sessionId={sessionId}
       isHost={isHost}
       onCopyLink={copyLink}
+      avatarSeed={avatarSeed}
     />
   );
 };

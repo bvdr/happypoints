@@ -66,6 +66,77 @@ export default {
       );
     }
 
+    // Route: /api/generate-summary - Generate AI summary for votes
+    if (url.pathname === '/api/generate-summary' && request.method === 'POST') {
+      try {
+        const { votes } = await request.json() as { votes: (string | number)[] };
+
+        if (!env.GEMINI_API_KEY) {
+          return new Response(
+            JSON.stringify({ summary: 'AI Analysis complete.' }),
+            {
+              headers: {
+                'Content-Type': 'application/json',
+                ...corsHeaders,
+              },
+            }
+          );
+        }
+
+        // Call Gemini API
+        const geminiResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${env.GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [
+                {
+                  parts: [
+                    {
+                      text: `You are a witty Agile Scrum Master assistant.
+The team has voted on a task complexity.
+Here are the votes: ${votes.join(', ')}.
+
+Analyze the consensus or disagreement.
+If everyone agrees, celebrate.
+If there is a wide split (e.g., 1s and 21s), make a funny comment about the confusion.
+If there are "?" or coffee cups, acknowledge them.
+Keep it under 20 words. be fun.`,
+                    },
+                  ],
+                },
+              ],
+            }),
+          }
+        );
+
+        const data = await geminiResponse.json() as any;
+        const summary =
+          data.candidates?.[0]?.content?.parts?.[0]?.text || 'AI Analysis complete.';
+
+        return new Response(JSON.stringify({ summary }), {
+          headers: {
+            'Content-Type': 'application/json',
+            ...corsHeaders,
+          },
+        });
+      } catch (error) {
+        console.error('Gemini API error:', error);
+        return new Response(
+          JSON.stringify({ summary: 'Could not generate insight.' }),
+          {
+            headers: {
+              'Content-Type': 'application/json',
+              ...corsHeaders,
+            },
+          }
+        );
+      }
+    }
+
     // Route: /api/session/:sessionId - Get session state (HTTP)
     const sessionMatch = url.pathname.match(/^\/api\/session\/([A-Z0-9]{6})$/);
     if (sessionMatch && request.method === 'GET') {

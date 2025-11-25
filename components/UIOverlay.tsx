@@ -70,7 +70,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
              <Info size={20} />
            </div>
            <p className="text-lg font-light leading-snug italic">"{gameState.aiSummary}"</p>
-           <div className="mt-2 text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Gemini Analysis</div>
+           <div className="mt-2 text-[10px] font-bold text-indigo-500 uppercase tracking-widest">AI Analysis</div>
         </div>
       )}
 

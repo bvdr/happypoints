@@ -31,4 +31,4 @@ command = "npm run build:worker"
 CORS_ORIGIN = "http://localhost:3000"
 
 [env.production.vars]
-CORS_ORIGIN = "https://planning-poker-9tp.pages.dev"
+CORS_ORIGIN = "https://happypoints.app"

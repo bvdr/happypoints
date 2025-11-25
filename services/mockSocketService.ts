@@ -11,6 +11,7 @@ const DEFAULT_STATE: GameState = {
   players: [],
   average: null,
   aiSummary: null,
+  emojiThrows: [],
 };
 
 // Get session state from localStorage (shared across all tabs)
@@ -77,7 +78,9 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
         isHost: shouldBeHost,
         vote: null,
         joinedAt: now,
-        isDisconnected: false
+        isDisconnected: false,
+        health: 100,
+        isKnockedOut: false
       };
 
       const newState = { ...prev, players: [...prev.players, newPlayer] };
@@ -161,6 +164,92 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     broadcast({ type: 'RESET', payload: null });
   }, [broadcast, myId, sessionId, updateGameState]);
 
+  // Throw emoji from current player to target player
+  const throwEmoji = useCallback((targetPlayerId: string) => {
+    const throwId = Math.random().toString(36).substring(2, 9);
+    const emojiThrow = {
+      id: throwId,
+      fromPlayerId: myId,
+      toPlayerId: targetPlayerId,
+      emoji: '🏐', // Volleyball emoji
+      timestamp: Date.now(),
+    };
+
+    // Add to local state
+    updateGameState(prev => ({
+      ...prev,
+      emojiThrows: [...prev.emojiThrows, emojiThrow],
+    }));
+
+    // Broadcast to other tabs
+    broadcast({ type: 'THROW_EMOJI', payload: emojiThrow });
+  }, [broadcast, myId, updateGameState]);
+
+  // Remove completed emoji throw from state and damage the target player
+  const removeEmojiThrow = useCallback((throwId: string) => {
+    // Find the throw to get target player ID
+    const currentState = getSessionState(sessionId);
+    const throwData = currentState.emojiThrows.find(t => t.id === throwId);
+
+    if (throwData) {
+      // Damage the target player
+      const damage = 20; // Each emoji hit does 20 damage
+
+      updateGameState(prev => {
+        const updatedPlayers = prev.players.map(p => {
+          if (p.id === throwData.toPlayerId) {
+            const newHealth = Math.max(0, p.health - damage);
+            return {
+              ...p,
+              health: newHealth,
+              isKnockedOut: newHealth === 0,
+              lastHitTimestamp: Date.now()
+            };
+          }
+          return p;
+        });
+
+        return {
+          ...prev,
+          players: updatedPlayers,
+          emojiThrows: prev.emojiThrows.filter(t => t.id !== throwId),
+        };
+      });
+
+      // Broadcast the hit to other tabs
+      broadcast({
+        type: 'HIT_PLAYER',
+        payload: {
+          playerId: throwData.toPlayerId,
+          damage,
+          timestamp: Date.now()
+        }
+      });
+
+      // If player was knocked out, reset their health after 3 seconds
+      const targetPlayer = currentState.players.find(p => p.id === throwData.toPlayerId);
+      if (targetPlayer && targetPlayer.health - damage <= 0) {
+        setTimeout(() => {
+          updateGameState(prev => ({
+            ...prev,
+            players: prev.players.map(p =>
+              p.id === throwData.toPlayerId
+                ? { ...p, health: 100, isKnockedOut: false }
+                : p
+            )
+          }));
+          broadcast({ type: 'HIT_PLAYER', payload: { playerId: throwData.toPlayerId, reset: true } });
+        }, 3000);
+      }
+    } else {
+      // Just remove the throw if not found
+      updateGameState(prev => ({
+        ...prev,
+        emojiThrows: prev.emojiThrows.filter(t => t.id !== throwId),
+      }));
+    }
+  }, [updateGameState, sessionId, broadcast]);
+
   // --- Event Listener ---
 
   useEffect(() => {
@@ -229,6 +318,45 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
             });
           }, 3000);
           break;
+
+        case 'THROW_EMOJI':
+          // Add emoji throw to state
+          updateGameState(prev => ({
+            ...prev,
+            emojiThrows: [...prev.emojiThrows, payload],
+          }));
+          break;
+
+        case 'HIT_PLAYER':
+          if (payload.reset) {
+            // Reset player health
+            updateGameState(prev => ({
+              ...prev,
+              players: prev.players.map(p =>
+                p.id === payload.playerId
+                  ? { ...p, health: 100, isKnockedOut: false }
+                  : p
+              )
+            }));
+          } else {
+            // Damage player
+            updateGameState(prev => ({
+              ...prev,
+              players: prev.players.map(p => {
+                if (p.id === payload.playerId) {
+                  const newHealth = Math.max(0, p.health - payload.damage);
+                  return {
+                    ...p,
+                    health: newHealth,
+                    isKnockedOut: newHealth === 0,
+                    lastHitTimestamp: payload.timestamp
+                  };
+                }
+                return p;
+              })
+            }));
+          }
+          break;
       }
     };
 
@@ -262,6 +390,8 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     gameState,
     vote,
     revealVotes,
-    resetRound
+    resetRound,
+    throwEmoji,
+    removeEmojiThrow
   };
 };

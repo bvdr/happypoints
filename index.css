@@ -17,3 +17,13 @@
     transform: translateY(-100px) scale(0.5);
   }
 }
+
+/* Flicker animation for knocked out players (like a fighting game KO) */
+@keyframes flicker {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}

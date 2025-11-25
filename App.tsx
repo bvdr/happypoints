@@ -21,7 +21,7 @@ const GameSession: React.FC<{
   onCopyLink: () => void;
 }> = ({ playerName, sessionId, isHost, onCopyLink }) => {
   const table3DRef = useRef<Table3DRef>(null);
-  const { myId, gameState, vote, revealVotes, resetRound } = useGameSession(
+  const { myId, gameState, vote, revealVotes, resetRound, throwEmoji, removeEmojiThrow } = useGameSession(
     playerName,
     sessionId,
     isHost
@@ -36,6 +36,9 @@ const GameSession: React.FC<{
         status={gameState.status}
         average={gameState.average}
         myId={myId}
+        emojiThrows={gameState.emojiThrows}
+        onThrowEmoji={throwEmoji}
+        onEmojiThrowComplete={removeEmojiThrow}
       />
 
       {/* 2D Overlay */}

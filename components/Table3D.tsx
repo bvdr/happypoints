@@ -2,10 +2,13 @@ import React, { useRef, useMemo, Suspense, forwardRef, useImperativeHandle } fro
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Text, Environment, ContactShadows, OrbitControls, Html, useProgress } from '@react-three/drei';
 import * as THREE from 'three';
-import { Player, GameStatus } from '../types';
+import { Player, GameStatus, EmojiThrow as EmojiThrowType } from '../types';
 import { FELT_COLOR, RAIL_COLOR, CARD_BACK_COLOR, CARD_FRONT_COLOR, TABLE_WIDTH, TABLE_DEPTH, FELT_RING_COLOR } from '../constants';
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { Check } from 'lucide-react';
+import { EmojiThrow } from './EmojiThrow';
+import { LifeBar } from './LifeBar';
+import { MinusOneUp } from './MinusOneUp';
 
 export interface Table3DRef {
   resetCamera: () => void;
@@ -181,14 +184,22 @@ interface PlayerSeatProps {
   rotation: [number, number, number];
   status: GameStatus;
   isMe: boolean;
+  onPlayerClick?: (playerId: string) => void;
 }
 
-const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe }) => {
+const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe, onPlayerClick }) => {
   const groupRef = useRef<THREE.Group>(null);
 
   // SVG format for crisp rendering at any size
   // Using player ID + name as seed to ensure uniqueness (even if multiple players have same name)
   const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.id + player.name)}&format=svg`;
+
+  const handleClick = () => {
+    // Don't allow clicking on yourself or disconnected players
+    if (!isMe && !player.isDisconnected && onPlayerClick) {
+      onPlayerClick(player.id);
+    }
+  };
 
   // Push cards slightly towards center
   const cardPos: [number, number, number] = [
@@ -215,17 +226,27 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
       <Html position={[0, 1.5, 0]} center sprite distanceFactor={8} zIndexRange={[100, 0]}>
         <div
           className={`
-            flex flex-col items-center transition-all duration-300
+            flex flex-col items-center transition-all duration-300 relative
             ${isMe ? 'scale-110' : 'scale-100'}
             ${player.isDisconnected ? 'animate-[fade-out-teleport_3s_ease-in-out_forwards]' : ''}
+            ${player.isKnockedOut ? 'animate-[flicker_0.1s_ease-in-out_15]' : ''}
           `}
         >
+          {/* -1UP animation when knocked out */}
+          {player.isKnockedOut && <MinusOneUp />}
+
+          {/* Life Bar - shown above avatar, fades after 3 seconds */}
+          <LifeBar health={player.health} lastHitTimestamp={player.lastHitTimestamp} />
           {/* Avatar - Doubled size: w-16 h-16 (64px) */}
-          <div className={`
-            relative w-16 h-16 rounded-full border-2 shadow-lg mb-1 bg-gray-900 overflow-hidden
-            ${isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700')}
-            ${player.isDisconnected ? 'opacity-30' : ''}
-          `}>
+          <div
+            className={`
+              relative w-16 h-16 rounded-full border-2 shadow-lg mb-1 bg-gray-900 overflow-hidden
+              ${isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700')}
+              ${player.isDisconnected ? 'opacity-30' : ''}
+              ${!isMe && !player.isDisconnected ? 'cursor-pointer hover:scale-110 transition-transform' : ''}
+            `}
+            onClick={handleClick}
+          >
              <img
                src={avatarUrl}
                alt={player.name}
@@ -299,6 +320,9 @@ interface Table3DProps {
   status: GameStatus;
   average: number | null;
   myId: string;
+  emojiThrows: EmojiThrowType[];
+  onThrowEmoji: (targetPlayerId: string) => void;
+  onEmojiThrowComplete: (throwId: string) => void;
 }
 
 // Camera animation component
@@ -345,7 +369,7 @@ const CameraController = forwardRef<{ resetCamera: () => void }>((props, ref) =>
   );
 });
 
-export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, average, myId }, ref) => {
+export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, average, myId, emojiThrows, onThrowEmoji, onEmojiThrowComplete }, ref) => {
   const cameraControllerRef = useRef<{ resetCamera: () => void }>(null);
 
   useImperativeHandle(ref, () => ({
@@ -393,6 +417,17 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
 
     return { pos: [x, 0, z] as [number, number, number], rot: [0, rotY, 0] as [number, number, number] };
   };
+
+  // Build a map of player positions for emoji trajectory calculations
+  const playerPositions = useMemo(() => {
+    const positions = new Map<string, THREE.Vector3>();
+    reorderedPlayers.forEach((player, i) => {
+      const { pos } = getSeatPosition(i, reorderedPlayers.length);
+      // Avatar position is slightly elevated (y = 1.5) to match PlayerSeat Html positioning
+      positions.set(player.id, new THREE.Vector3(pos[0], 1.5, pos[2]));
+    });
+    return positions;
+  }, [reorderedPlayers]);
 
   return (
     <div className="w-full h-full absolute top-0 left-0 z-0 bg-[#0a0a0a]">
@@ -497,7 +532,27 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
                           rotation={rot}
                           status={status}
                           isMe={player.id === myId}
+                          onPlayerClick={onThrowEmoji}
                         />
+                    );
+                  })}
+
+                  {/* EMOJI THROWS */}
+                  {emojiThrows.map((throwData) => {
+                    const fromPos = playerPositions.get(throwData.fromPlayerId);
+                    const toPos = playerPositions.get(throwData.toPlayerId);
+
+                    // Only render if both positions exist
+                    if (!fromPos || !toPos) return null;
+
+                    return (
+                      <EmojiThrow
+                        key={throwData.id}
+                        throw={throwData}
+                        fromPosition={fromPos}
+                        toPosition={toPos}
+                        onComplete={() => onEmojiThrowComplete(throwData.id)}
+                      />
                     );
                   })}
 

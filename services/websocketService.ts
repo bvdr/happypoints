@@ -86,8 +86,6 @@ export const useGameSession = (
     const me = gameState.players.find(p => p.id === myId);
     if (!me?.isHost) return;
 
-    console.log('[DEBUG] revealVotes called - sending REVEAL immediately');
-
     // Send REVEAL immediately with no AI summary
     send({
       type: 'REVEAL',
@@ -98,8 +96,6 @@ export const useGameSession = (
       },
     });
 
-    console.log('[DEBUG] REVEAL sent, starting async AI call');
-
     // Fetch AI summary asynchronously (non-blocking)
     const rawVotes: string[] = [];
     gameState.players.forEach(p => {
@@ -107,7 +103,6 @@ export const useGameSession = (
     });
 
     generateVoteSummary(rawVotes).then(summary => {
-      console.log('[DEBUG] AI summary received:', summary);
       // Send AI_SUMMARY update after it's ready
       send({
         type: 'AI_SUMMARY',

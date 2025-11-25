@@ -226,6 +226,13 @@ export class GameSessionDO {
         break;
       }
 
+      case 'AI_SUMMARY': {
+        // Update AI summary asynchronously after reveal
+        this.gameState.aiSummary = message.payload.aiSummary;
+        this.broadcast(message);
+        break;
+      }
+
       case 'LEAVE': {
         const { id } = message.payload;
         this.handlePlayerLeave(id);

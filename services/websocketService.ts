@@ -81,27 +81,38 @@ export const useGameSession = (
     [send, myId]
   );
 
-  const revealVotes = useCallback(async () => {
+  const revealVotes = useCallback(() => {
     // Check if I'm host
     const me = gameState.players.find(p => p.id === myId);
     if (!me?.isHost) return;
 
-    // Collect votes for AI summary
-    const rawVotes: string[] = [];
-    gameState.players.forEach(p => {
-      if (p.vote) rawVotes.push(p.vote);
-    });
+    console.log('[DEBUG] revealVotes called - sending REVEAL immediately');
 
-    // Call Gemini for insight
-    const summary = await generateVoteSummary(rawVotes);
-
+    // Send REVEAL immediately with no AI summary
     send({
       type: 'REVEAL',
       payload: {
         status: GameStatus.REVEALED,
         average: null, // Server will calculate
-        aiSummary: summary,
+        aiSummary: null, // Will be updated asynchronously
       },
+    });
+
+    console.log('[DEBUG] REVEAL sent, starting async AI call');
+
+    // Fetch AI summary asynchronously (non-blocking)
+    const rawVotes: string[] = [];
+    gameState.players.forEach(p => {
+      if (p.vote) rawVotes.push(p.vote);
+    });
+
+    generateVoteSummary(rawVotes).then(summary => {
+      console.log('[DEBUG] AI summary received:', summary);
+      // Send AI_SUMMARY update after it's ready
+      send({
+        type: 'AI_SUMMARY',
+        payload: { aiSummary: summary },
+      });
     });
   }, [send, myId, gameState.players]);
 
@@ -208,6 +219,14 @@ export const useGameSession = (
               ...prev,
               status: GameStatus.REVEALED,
               average: message.payload.average,
+              aiSummary: message.payload.aiSummary,
+            }));
+            break;
+
+          case 'AI_SUMMARY':
+            // Update AI summary asynchronously after reveal
+            setGameState(prev => ({
+              ...prev,
               aiSummary: message.payload.aiSummary,
             }));
             break;

@@ -39,6 +39,7 @@ export type SocketMessage =
   | { type: 'JOIN'; payload: Player }
   | { type: 'VOTE'; payload: { id: string; vote: string | null } }
   | { type: 'REVEAL'; payload: { status: GameStatus; average: number | null; aiSummary: string | null } }
+  | { type: 'AI_SUMMARY'; payload: { aiSummary: string } }
   | { type: 'RESET'; payload: null }
   | { type: 'LEAVE'; payload: { id: string } }
   | { type: 'THROW_EMOJI'; payload: EmojiThrow }

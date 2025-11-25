@@ -88,8 +88,17 @@ const App = () => {
     return urlParams.session || Math.random().toString(36).substring(2, 8).toUpperCase();
   }, [urlParams.session]);
 
-  // Is this user the creator? (Simplified: if no session in URL initially, they are creator)
-  const isHost = useMemo(() => !urlParams.session, [urlParams.session]);
+  // Is this user the creator? Check localStorage first for persistence across reconnects
+  const [isHost] = useState(() => {
+    const params = getHashParams();
+    if (!params.session) {
+      // No session in URL = creating new session = definitely host
+      return true;
+    }
+    // Check if we were previously host for this session
+    const savedHostSession = localStorage.getItem('happypoints_host_session');
+    return savedHostSession === params.session;
+  });
 
   const handleStart = (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,11 +108,13 @@ const App = () => {
     localStorage.setItem('happypoints_name', name.trim());
     localStorage.setItem('happypoints_avatar_seed', avatarSeed);
 
-    setConfirmedName(name.trim());
-
+    // Save host status for this session to survive reconnects
     if (isHost) {
+      localStorage.setItem('happypoints_host_session', sessionId);
       window.location.hash = `session=${sessionId}`;
     }
+
+    setConfirmedName(name.trim());
     setStarted(true);
   };
 

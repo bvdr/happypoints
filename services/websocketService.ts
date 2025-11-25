@@ -198,7 +198,14 @@ export const useGameSession = (
 
           case 'JOIN':
             setGameState(prev => {
-              if (prev.players.find(p => p.id === message.payload.id)) return prev;
+              const existingIndex = prev.players.findIndex(p => p.id === message.payload.id);
+              if (existingIndex !== -1) {
+                // Player already exists - UPDATE their data (especially isHost from server)
+                const updatedPlayers = [...prev.players];
+                updatedPlayers[existingIndex] = message.payload;
+                return { ...prev, players: updatedPlayers };
+              }
+              // New player - add them
               return { ...prev, players: [...prev.players, message.payload] };
             });
             break;

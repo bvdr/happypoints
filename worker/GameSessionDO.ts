@@ -104,6 +104,14 @@ export class GameSessionDO {
       case 'JOIN': {
         const player = message.payload;
 
+        console.log('[JOIN] Player joining:', {
+          playerId: player.id,
+          playerName: player.name,
+          clientIsHost: player.isHost,
+          existingPlayersCount: this.gameState.players.length,
+          existingPlayers: this.gameState.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost }))
+        });
+
         // Store player ID for this connection
         if (connection) {
           connection.playerId = player.id;
@@ -115,10 +123,21 @@ export class GameSessionDO {
 
         if (existingPlayerIndex !== -1) {
           // Player reconnecting - mark as not disconnected
+          console.log('[JOIN] Player reconnecting, marking as not disconnected');
           this.gameState.players[existingPlayerIndex].isDisconnected = false;
         } else {
           // New player joining
-          const shouldBeHost = this.gameState.players.length === 0;
+          // Respect client's isHost claim, OR fallback to making first player host
+          const hasExistingHost = this.gameState.players.some(p => p.isHost);
+          const shouldBeHost = player.isHost || (!hasExistingHost && this.gameState.players.length === 0);
+
+          console.log('[JOIN] New player logic:', {
+            hasExistingHost,
+            clientIsHost: player.isHost,
+            shouldBeHost,
+            playerCount: this.gameState.players.length
+          });
+
           const newPlayer: Player = {
             ...player,
             isHost: shouldBeHost,
@@ -128,6 +147,8 @@ export class GameSessionDO {
             isKnockedOut: false,
           };
           this.gameState.players.push(newPlayer);
+
+          console.log('[JOIN] Player added with isHost:', shouldBeHost);
         }
 
         this.broadcast(message);

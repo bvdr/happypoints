@@ -39,7 +39,7 @@ const saveSessionState = (state: GameState) => {
   localStorage.setItem(key, JSON.stringify(state));
 };
 
-export const useGameSession = (initialPlayerName: string, sessionId: string, isHost: boolean) => {
+export const useGameSession = (initialPlayerName: string, sessionId: string, isHost: boolean, selectedWeapon: string = '🏐') => {
   // Initialize from localStorage to get shared session state
   const [gameState, setGameState] = useState<GameState>(() => getSessionState(sessionId));
 
@@ -171,7 +171,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
       id: throwId,
       fromPlayerId: myId,
       toPlayerId: targetPlayerId,
-      emoji: '🏐', // Volleyball emoji
+      emoji: selectedWeapon, // Use currently selected weapon
       timestamp: Date.now(),
     };
 
@@ -183,7 +183,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
 
     // Broadcast to other tabs
     broadcast({ type: 'THROW_EMOJI', payload: emojiThrow });
-  }, [broadcast, myId, updateGameState]);
+  }, [broadcast, myId, updateGameState, selectedWeapon]);
 
   // Remove completed emoji throw from state and damage the target player
   const removeEmojiThrow = useCallback((throwId: string) => {

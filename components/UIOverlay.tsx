@@ -2,6 +2,7 @@ import React from 'react';
 import { GameState, GameStatus } from '../types';
 import { FIBONACCI_DECK } from '../constants';
 import { Users, RotateCcw, Eye, Info, RefreshCw } from 'lucide-react';
+import { WeaponSelector } from './WeaponSelector';
 
 interface UIOverlayProps {
   myId: string;
@@ -10,6 +11,8 @@ interface UIOverlayProps {
   onReveal: () => void;
   onReset: () => void;
   onResetCamera: () => void;
+  selectedWeapon: string;
+  onSelectWeapon: (emoji: string) => void;
 }
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
@@ -19,6 +22,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onReveal,
   onReset,
   onResetCamera,
+  selectedWeapon,
+  onSelectWeapon,
 }) => {
   const me = gameState.players.find((p) => p.id === myId);
   const isHost = me?.isHost;
@@ -79,6 +84,12 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
          >
            <RefreshCw size={20} />
          </button>
+
+         {/* Weapon Selector - Bottom Right */}
+         <WeaponSelector
+           selectedWeapon={selectedWeapon}
+           onSelectWeapon={onSelectWeapon}
+         />
 
          {/* Added pt-12 and items-end to allow space for the pop-up animation without clipping */}
          <div className="flex gap-3 justify-center pb-4 px-4 pt-12 items-end">

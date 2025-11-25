@@ -21,10 +21,14 @@ const GameSession: React.FC<{
   onCopyLink: () => void;
 }> = ({ playerName, sessionId, isHost, onCopyLink }) => {
   const table3DRef = useRef<Table3DRef>(null);
+  // Weapon selection state - defaults to volleyball
+  const [selectedWeapon, setSelectedWeapon] = useState('🏐');
+
   const { myId, gameState, vote, revealVotes, resetRound, throwEmoji, removeEmojiThrow } = useGameSession(
     playerName,
     sessionId,
-    isHost
+    isHost,
+    selectedWeapon // Pass selected weapon to game session
   );
 
   return (
@@ -49,6 +53,8 @@ const GameSession: React.FC<{
         onReveal={revealVotes}
         onReset={resetRound}
         onResetCamera={() => table3DRef.current?.resetCamera()}
+        selectedWeapon={selectedWeapon}
+        onSelectWeapon={setSelectedWeapon}
       />
 
       {/* Share Floating Button */}

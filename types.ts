@@ -13,8 +13,8 @@ export interface Player {
 }
 
 export enum GameStatus {
-  VOTING = 'VOTING',
-  REVEALED = 'REVEALED',
+  VOTING = 'voting',
+  REVEALED = 'revealed',
 }
 
 // Structure for emoji throws - tracks who threw emoji to whom
@@ -35,7 +35,13 @@ export interface GameState {
   emojiThrows: EmojiThrow[]; // Active emoji throws (cleared after animation)
 }
 
-export interface SocketMessage {
-  type: 'JOIN' | 'VOTE' | 'REVEAL' | 'RESET' | 'SYNC_REQUEST' | 'SYNC_RESPONSE' | 'LEAVE' | 'THROW_EMOJI' | 'HIT_PLAYER';
-  payload?: any;
-}
+export type SocketMessage =
+  | { type: 'JOIN'; payload: Player }
+  | { type: 'VOTE'; payload: { id: string; vote: string | null } }
+  | { type: 'REVEAL'; payload: { status: GameStatus; average: number | null; aiSummary: string | null } }
+  | { type: 'RESET'; payload: null }
+  | { type: 'LEAVE'; payload: { id: string } }
+  | { type: 'THROW_EMOJI'; payload: EmojiThrow }
+  | { type: 'HIT_PLAYER'; payload: { throwId?: string; playerId: string; damage?: number; timestamp?: number; reset?: boolean } }
+  | { type: 'STATE_SYNC'; payload: GameState }
+  | { type: 'ERROR'; payload: { message: string } };

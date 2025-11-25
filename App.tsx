@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { useGameSession } from './services/mockSocketService';
+import { useGameSession } from './services/websocketService';
 import { Table3D, Table3DRef } from './components/Table3D';
 import { UIOverlay } from './components/UIOverlay';
 import { Users, Play, Link as LinkIcon, Copy } from 'lucide-react';

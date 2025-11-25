@@ -118,36 +118,41 @@ interface Card3DProps {
   isMyCard: boolean;
 }
 
-const Card3D: React.FC<Card3DProps> = ({ 
-  value, 
-  position, 
-  rotation, 
+const Card3D: React.FC<Card3DProps> = ({
+  value,
+  position,
+  rotation,
   isRevealed,
   isMyCard
 }) => {
   const groupRef = useRef<THREE.Group>(null);
+  const cardRef = useRef<THREE.Group>(null);
   const targetY = position[1];
 
   useFrame((state) => {
     if (groupRef.current) {
       const floatOffset = Math.sin(state.clock.elapsedTime * 2) * 0.05;
       groupRef.current.position.y = THREE.MathUtils.lerp(
-        groupRef.current.position.y, 
-        targetY + floatOffset, 
+        groupRef.current.position.y,
+        targetY + floatOffset,
         0.1
       );
+    }
+
+    if (cardRef.current) {
+      // Flip the card 180 degrees when revealed
       const targetRotX = isRevealed ? Math.PI : 0;
-      groupRef.current.rotation.x = THREE.MathUtils.lerp(groupRef.current.rotation.x, targetRotX + rotation[0], 0.1);
+      cardRef.current.rotation.x = THREE.MathUtils.lerp(cardRef.current.rotation.x, targetRotX, 0.1);
     }
   });
 
   return (
-    <group 
-      ref={groupRef} 
-      position={position} 
+    <group
+      ref={groupRef}
+      position={position}
       rotation={[rotation[0], rotation[1], rotation[2]]}
     >
-        <group>
+        <group ref={cardRef}>
             {/* Front */}
             <mesh position={[0, 0, 0.005]}>
                 <boxGeometry args={[1, 1.4, 0.01]} />
@@ -163,7 +168,7 @@ const Card3D: React.FC<Card3DProps> = ({
             </mesh>
              <mesh position={[0, 0, -0.01]}>
                  <planeGeometry args={[0.9, 1.3]} />
-                 <meshStandardMaterial color="#60a5fa" roughness={0.8} /> 
+                 <meshStandardMaterial color="#60a5fa" roughness={0.8} />
              </mesh>
         </group>
     </group>
@@ -277,16 +282,7 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
         </div>
       </Html>
 
-      {/* Only show 3D cards when revealed */}
-      {status === GameStatus.REVEALED && player.vote && !player.isDisconnected && (
-        <Card3D
-          value={player.vote}
-          position={cardPos}
-          rotation={cardRot}
-          isRevealed={status === GameStatus.REVEALED}
-          isMyCard={isMe}
-        />
-      )}
+      {/* 3D cards removed - votes shown in UI badges only */}
     </group>
   );
 };

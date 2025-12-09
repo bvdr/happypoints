@@ -323,12 +323,22 @@ export const useGameSession = (
                 ...prev,
                 players: prev.players.map(p => {
                   if (p.id === message.payload.playerId) {
-                    const newHealth = Math.max(0, p.health - (message.payload.damage || 0));
+                    const isHeart = message.payload.emoji === '❤️';
+                    // Hearts heal, other emojis damage
+                    const newHealth = isHeart
+                      ? Math.min(100, p.health + (message.payload.damage || 0))
+                      : Math.max(0, p.health - (message.payload.damage || 0));
+                    // Track heart hits on monkeys - revert to normal avatar at 5 hearts
+                    const newHeartCount = (isHeart && p.isMonkey) ? (p.heartHitCount || 0) + 1 : (p.heartHitCount || 0);
+                    const shouldRevert = newHeartCount >= 5;
                     return {
                       ...p,
                       health: newHealth,
-                      isKnockedOut: newHealth === 0,
+                      isKnockedOut: !isHeart && newHealth === 0,
                       lastHitTimestamp: message.payload.timestamp,
+                      heartHitCount: shouldRevert ? 0 : newHeartCount,
+                      isMonkey: shouldRevert ? false : p.isMonkey,
+                      poopHitCount: shouldRevert ? 0 : p.poopHitCount,
                     };
                   }
                   return p;

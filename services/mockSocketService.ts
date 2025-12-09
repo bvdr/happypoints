@@ -227,16 +227,26 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     if (throwData) {
       // Damage the target player
       const damage = 1; // Each emoji hit does 1 damage
+      const isHeart = throwData.emoji === '❤️';
 
       updateGameState(prev => {
         const updatedPlayers = prev.players.map(p => {
           if (p.id === throwData.toPlayerId) {
-            const newHealth = Math.max(0, p.health - damage);
+            // Hearts heal, other emojis damage
+            const newHealth = isHeart
+              ? Math.min(100, p.health + damage)
+              : Math.max(0, p.health - damage);
+            // Track heart hits on monkeys - revert to normal avatar at 5 hearts
+            const newHeartCount = (isHeart && p.isMonkey) ? (p.heartHitCount || 0) + 1 : (p.heartHitCount || 0);
+            const shouldRevert = newHeartCount >= 5;
             return {
               ...p,
               health: newHealth,
-              isKnockedOut: newHealth === 0,
-              lastHitTimestamp: Date.now()
+              isKnockedOut: !isHeart && newHealth === 0,
+              lastHitTimestamp: Date.now(),
+              heartHitCount: shouldRevert ? 0 : newHeartCount,
+              isMonkey: shouldRevert ? false : p.isMonkey,
+              poopHitCount: shouldRevert ? 0 : p.poopHitCount,
             };
           }
           return p;
@@ -395,17 +405,27 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
               flashEmojiFavicon(payload.emoji);
             }
 
-            // Damage player
+            // Handle player hit - hearts heal, others damage
             updateGameState(prev => ({
               ...prev,
               players: prev.players.map(p => {
                 if (p.id === payload.playerId) {
-                  const newHealth = Math.max(0, p.health - payload.damage);
+                  const isHeart = payload.emoji === '❤️';
+                  // Hearts heal, other emojis damage
+                  const newHealth = isHeart
+                    ? Math.min(100, p.health + payload.damage)
+                    : Math.max(0, p.health - payload.damage);
+                  // Track heart hits on monkeys - revert to normal avatar at 5 hearts
+                  const newHeartCount = (isHeart && p.isMonkey) ? (p.heartHitCount || 0) + 1 : (p.heartHitCount || 0);
+                  const shouldRevert = newHeartCount >= 5;
                   return {
                     ...p,
                     health: newHealth,
-                    isKnockedOut: newHealth === 0,
-                    lastHitTimestamp: payload.timestamp
+                    isKnockedOut: !isHeart && newHealth === 0,
+                    lastHitTimestamp: payload.timestamp,
+                    heartHitCount: shouldRevert ? 0 : newHeartCount,
+                    isMonkey: shouldRevert ? false : p.isMonkey,
+                    poopHitCount: shouldRevert ? 0 : p.poopHitCount,
                   };
                 }
                 return p;

@@ -231,7 +231,7 @@ export class GameSessionDO {
       }
 
       case 'HIT_PLAYER': {
-        const { throwId, playerId, damage, reset } = message.payload;
+        const { throwId, playerId, damage, reset, emoji } = message.payload;
 
         if (reset) {
           // Reset player health
@@ -241,12 +241,28 @@ export class GameSessionDO {
             player.isKnockedOut = false;
           }
         } else if (damage) {
-          // Apply damage
           const player = this.gameState.players.find(p => p.id === playerId);
           if (player) {
-            player.health = Math.max(0, player.health - damage);
-            player.isKnockedOut = player.health === 0;
-            player.lastHitTimestamp = Date.now();
+            // Hearts heal instead of damage
+            if (emoji === '❤️') {
+              player.health = Math.min(100, player.health + damage);
+              player.lastHitTimestamp = Date.now();
+
+              // Track heart hits on monkeys - revert to normal avatar at 5 hearts
+              if (player.isMonkey) {
+                player.heartHitCount = (player.heartHitCount || 0) + 1;
+                if (player.heartHitCount >= 5) {
+                  player.isMonkey = false;
+                  player.poopHitCount = 0;
+                  player.heartHitCount = 0;
+                }
+              }
+            } else {
+              // Apply damage for non-heart emojis
+              player.health = Math.max(0, player.health - damage);
+              player.isKnockedOut = player.health === 0;
+              player.lastHitTimestamp = Date.now();
+            }
           }
         }
 

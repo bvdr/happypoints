@@ -82,7 +82,9 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
         joinedAt: now,
         isDisconnected: false,
         health: 100,
-        isKnockedOut: false
+        isKnockedOut: false,
+        poopHitCount: 0,
+        isMonkey: false
       };
 
       const newState = { ...prev, players: [...prev.players, newPlayer] };
@@ -190,10 +192,26 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
       timestamp: Date.now(),
     };
 
-    // Add to local state
+    const isPoop = selectedWeapon === '💩';
+
+    // Add to local state and track poop throws for thrower
     updateGameState(prev => ({
       ...prev,
       emojiThrows: [...prev.emojiThrows, emojiThrow],
+      // Track poop throws - the THROWER transforms to monkey at 5 poops thrown
+      players: isPoop
+        ? prev.players.map(p => {
+            if (p.id === myId) {
+              const newPoopCount = (p.poopHitCount || 0) + 1;
+              return {
+                ...p,
+                poopHitCount: newPoopCount,
+                isMonkey: newPoopCount >= 5 || p.isMonkey,
+              };
+            }
+            return p;
+          })
+        : prev.players,
     }));
 
     // Broadcast to other tabs
@@ -336,11 +354,28 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
           break;
 
         case 'THROW_EMOJI':
-          // Add emoji throw to state
-          updateGameState(prev => ({
-            ...prev,
-            emojiThrows: [...prev.emojiThrows, payload],
-          }));
+          // Add emoji throw to state and track poop throws for the thrower
+          updateGameState(prev => {
+            const isPoop = payload.emoji === '💩';
+            return {
+              ...prev,
+              emojiThrows: [...prev.emojiThrows, payload],
+              // Track poop throws - the THROWER transforms to monkey at 5 poops thrown
+              players: isPoop
+                ? prev.players.map(p => {
+                    if (p.id === payload.fromPlayerId) {
+                      const newPoopCount = (p.poopHitCount || 0) + 1;
+                      return {
+                        ...p,
+                        poopHitCount: newPoopCount,
+                        isMonkey: newPoopCount >= 5 || p.isMonkey,
+                      };
+                    }
+                    return p;
+                  })
+                : prev.players,
+            };
+          });
           break;
 
         case 'HIT_PLAYER':

@@ -70,6 +70,8 @@ export const useGameSession = (
       isDisconnected: false,
       health: 100,
       isKnockedOut: false,
+      poopHitCount: 0,
+      isMonkey: false,
     };
 
     send({ type: 'JOIN', payload: newPlayer });
@@ -276,10 +278,29 @@ export const useGameSession = (
             break;
 
           case 'THROW_EMOJI':
-            setGameState(prev => ({
-              ...prev,
-              emojiThrows: [...prev.emojiThrows, message.payload],
-            }));
+            // Track poop throws - the THROWER transforms to monkey at 5 poops thrown
+            setGameState(prev => {
+              const emojiThrow = message.payload;
+              const isPoop = emojiThrow.emoji === '💩';
+
+              return {
+                ...prev,
+                emojiThrows: [...prev.emojiThrows, emojiThrow],
+                players: isPoop
+                  ? prev.players.map(p => {
+                      if (p.id === emojiThrow.fromPlayerId) {
+                        const newPoopCount = (p.poopHitCount || 0) + 1;
+                        return {
+                          ...p,
+                          poopHitCount: newPoopCount,
+                          isMonkey: newPoopCount >= 5 || p.isMonkey,
+                        };
+                      }
+                      return p;
+                    })
+                  : prev.players,
+              };
+            });
             break;
 
           case 'HIT_PLAYER':

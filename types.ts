@@ -10,6 +10,8 @@ export interface Player {
   health: number; // Player health (0-100), decreases when hit by emojis
   isKnockedOut?: boolean; // True when health reaches 0, triggers flicker animation
   lastHitTimestamp?: number; // Timestamp of last hit, used to fade out health bar
+  poopHitCount?: number; // Count of poop emoji hits received
+  isMonkey?: boolean; // True when player has been hit by 5 poops, transforms avatar to monkey
 }
 
 export enum GameStatus {

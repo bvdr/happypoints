@@ -191,9 +191,11 @@ interface PlayerSeatProps {
 const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe, onPlayerClick }) => {
   const groupRef = useRef<THREE.Group>(null);
 
-  // SVG format for crisp rendering at any size
-  // Using player ID as seed - the ID is the avatarSeed chosen by the user
-  const avatarUrl = `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.id)}&format=svg`;
+  // If player has been hit by 5 poops, show monkey avatar instead of DiceBear
+  // Otherwise use SVG format for crisp rendering at any size
+  const avatarUrl = player.isMonkey
+    ? '/monkey.png'
+    : `https://api.dicebear.com/9.x/fun-emoji/svg?seed=${encodeURIComponent(player.id)}&format=svg`;
 
   const handleClick = () => {
     // Don't allow clicking on yourself or disconnected players
@@ -241,8 +243,9 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
           {/* Avatar - Doubled size: w-16 h-16 (64px) */}
           <div
             className={`
-              relative w-16 h-16 rounded-full border-2 shadow-lg mb-1 bg-gray-900 overflow-hidden
-              ${isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700')}
+              relative w-16 h-16 rounded-full border-2 shadow-lg mb-1 overflow-hidden
+              ${player.isMonkey ? 'bg-transparent border-transparent' : 'bg-gray-900'}
+              ${!player.isMonkey && (isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700'))}
               ${player.isDisconnected ? 'opacity-30' : ''}
               ${!isMe && !player.isDisconnected ? 'cursor-pointer hover:scale-110 transition-transform' : ''}
             `}

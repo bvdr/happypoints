@@ -145,6 +145,8 @@ export class GameSessionDO {
             isDisconnected: false,
             health: 100,
             isKnockedOut: false,
+            poopHitCount: 0,
+            isMonkey: false,
           };
           this.gameState.players.push(newPlayer);
 
@@ -212,6 +214,18 @@ export class GameSessionDO {
       case 'THROW_EMOJI': {
         const emojiThrow = message.payload;
         this.gameState.emojiThrows.push(emojiThrow);
+
+        // Track poop throws - the THROWER transforms to monkey at 5 poops thrown
+        if (emojiThrow.emoji === '💩') {
+          const thrower = this.gameState.players.find(p => p.id === emojiThrow.fromPlayerId);
+          if (thrower) {
+            thrower.poopHitCount = (thrower.poopHitCount || 0) + 1;
+            if (thrower.poopHitCount >= 5 && !thrower.isMonkey) {
+              thrower.isMonkey = true;
+            }
+          }
+        }
+
         this.broadcast(message);
         break;
       }

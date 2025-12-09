@@ -9,6 +9,8 @@ export interface Player {
   health: number;
   isKnockedOut: boolean;
   lastHitTimestamp?: number;
+  poopHitCount?: number; // Count of poop emoji hits received
+  isMonkey?: boolean; // True when player has been hit by 5 poops, transforms avatar to monkey
 }
 
 export interface EmojiThrow {

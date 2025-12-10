@@ -2,6 +2,13 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Workflow
+
+- Always work on a `local` branch for development
+- `main` branch is reserved for production deployments
+- When ready to deploy, merge `local` into `main` and push
+- Pushing to `main` triggers automatic deployment to Cloudflare (Worker + Pages)
+
 ## Project Overview
 
 High Stakes Planning Poker is a **serverless, local-first** planning poker application for agile estimation. It uses `BroadcastChannel` API for real-time cross-tab synchronization and `localStorage` for state persistence—no backend server required.

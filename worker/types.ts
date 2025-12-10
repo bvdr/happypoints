@@ -3,6 +3,7 @@ export interface Player {
   id: string;
   name: string;
   isHost: boolean;
+  isAdmin?: boolean; // Admins can reveal/reset and manage other users
   vote: string | null;
   joinedAt: number;
   isDisconnected: boolean;
@@ -48,6 +49,7 @@ export type SocketMessage =
   | { type: 'THROW_EMOJI'; payload: EmojiThrow }
   | { type: 'HIT_PLAYER'; payload: { throwId?: string; playerId: string; damage?: number; timestamp?: number; reset?: boolean; emoji?: string } }
   | { type: 'TOGGLE_POOP'; payload: { disabled: boolean } }
+  | { type: 'SET_ADMIN'; payload: { playerId: string; isAdmin: boolean } }
   | { type: 'STATE_SYNC'; payload: GameState }
   | { type: 'ERROR'; payload: { message: string } };
 

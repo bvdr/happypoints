@@ -25,7 +25,7 @@ const GameSession: React.FC<{
   // Weapon selection state - defaults to volleyball
   const [selectedWeapon, setSelectedWeapon] = useState('🏐');
 
-  const { myId, gameState, vote, revealVotes, resetRound, throwEmoji, removeEmojiThrow, togglePoop } = useGameSession(
+  const { myId, gameState, vote, revealVotes, resetRound, throwEmoji, removeEmojiThrow, togglePoop, setAdmin } = useGameSession(
     playerName,
     sessionId,
     isHost,
@@ -45,6 +45,7 @@ const GameSession: React.FC<{
         emojiThrows={gameState.emojiThrows}
         onThrowEmoji={throwEmoji}
         onEmojiThrowComplete={removeEmojiThrow}
+        onSetAdmin={setAdmin}
       />
 
       {/* 2D Overlay */}

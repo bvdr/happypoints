@@ -5,6 +5,7 @@ export interface Player {
   name: string;
   vote?: CardValue | null;
   isHost: boolean;
+  isAdmin?: boolean; // Admins can reveal/reset and manage other users
   joinedAt: number; // Timestamp for host succession order
   isDisconnected?: boolean; // Flag for disconnected state (when tab closes)
   health: number; // Player health (0-100), decreases when hit by emojis
@@ -49,5 +50,6 @@ export type SocketMessage =
   | { type: 'THROW_EMOJI'; payload: EmojiThrow }
   | { type: 'HIT_PLAYER'; payload: { throwId?: string; playerId: string; damage?: number; timestamp?: number; reset?: boolean; emoji?: string } }
   | { type: 'TOGGLE_POOP'; payload: { disabled: boolean } }
+  | { type: 'SET_ADMIN'; payload: { playerId: string; isAdmin: boolean } }
   | { type: 'STATE_SYNC'; payload: GameState }
   | { type: 'ERROR'; payload: { message: string } };

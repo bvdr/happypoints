@@ -1,15 +1,16 @@
-import React, { useRef, useMemo, Suspense, forwardRef, useImperativeHandle } from 'react';
+import React, { useRef, useMemo, Suspense, forwardRef, useImperativeHandle, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Text, Environment, ContactShadows, OrbitControls, Html, useProgress } from '@react-three/drei';
 import * as THREE from 'three';
 import { Player, GameStatus, EmojiThrow as EmojiThrowType } from '../types';
 import { FELT_COLOR, RAIL_COLOR, CARD_BACK_COLOR, CARD_FRONT_COLOR, TABLE_WIDTH, TABLE_DEPTH, FELT_RING_COLOR } from '../constants';
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { Check } from 'lucide-react';
+import { Check, Shield } from 'lucide-react';
 import { EmojiThrow } from './EmojiThrow';
 import { LifeBar } from './LifeBar';
 import { MinusOneUp } from './MinusOneUp';
 import { VolumetricNumber } from './VolumetricNumber';
+import { PlayerActionMenu } from './PlayerActionMenu';
 
 export interface Table3DRef {
   resetCamera: () => void;
@@ -185,11 +186,14 @@ interface PlayerSeatProps {
   rotation: [number, number, number];
   status: GameStatus;
   isMe: boolean;
+  isViewerAdmin: boolean; // Whether the current user viewing this seat is an admin
   onPlayerClick?: (playerId: string) => void;
+  onSetAdmin?: (playerId: string, isAdmin: boolean) => void;
 }
 
-const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe, onPlayerClick }) => {
+const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe, isViewerAdmin, onPlayerClick, onSetAdmin }) => {
   const groupRef = useRef<THREE.Group>(null);
+  const [showActionMenu, setShowActionMenu] = useState(false);
 
   // If player has been hit by 5 poops, show monkey avatar instead of DiceBear
   // Otherwise use SVG format for crisp rendering at any size
@@ -201,6 +205,12 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
     // Don't allow clicking on yourself or disconnected players
     if (!isMe && !player.isDisconnected && onPlayerClick) {
       onPlayerClick(player.id);
+    }
+  };
+
+  const handleToggleAdmin = () => {
+    if (onSetAdmin && !isMe) {
+      onSetAdmin(player.id, !player.isAdmin);
     }
   };
 
@@ -234,7 +244,18 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
             ${player.isDisconnected ? 'animate-[fade-out-teleport_3s_ease-in-out_forwards]' : ''}
             ${player.isKnockedOut ? 'animate-[flicker_0.1s_ease-in-out_15]' : ''}
           `}
+          onMouseEnter={() => isViewerAdmin && !isMe && !player.isDisconnected && setShowActionMenu(true)}
+          onMouseLeave={() => setShowActionMenu(false)}
         >
+          {/* Admin Action Menu - shown on hover for admins */}
+          {showActionMenu && isViewerAdmin && !isMe && !player.isDisconnected && (
+            <PlayerActionMenu
+              isTargetAdmin={!!player.isAdmin}
+              onToggleAdmin={handleToggleAdmin}
+              onClose={() => setShowActionMenu(false)}
+            />
+          )}
+
           {/* -1UP animation when knocked out */}
           {player.isKnockedOut && <MinusOneUp />}
 
@@ -262,6 +283,12 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
                  willChange: 'transform'
                }}
              />
+             {/* Admin badge overlay */}
+             {player.isAdmin && (
+               <div className="absolute -top-1 -right-1 bg-yellow-500 rounded-full p-0.5 shadow-lg border border-yellow-300">
+                 <Shield size={12} className="text-yellow-900" />
+               </div>
+             )}
           </div>
 
           {/* Name Tag - Doubled text size */}
@@ -327,6 +354,7 @@ interface Table3DProps {
   emojiThrows: EmojiThrowType[];
   onThrowEmoji: (targetPlayerId: string) => void;
   onEmojiThrowComplete: (throwId: string) => void;
+  onSetAdmin?: (playerId: string, isAdmin: boolean) => void;
 }
 
 // Camera animation component
@@ -373,7 +401,7 @@ const CameraController = forwardRef<{ resetCamera: () => void }>((props, ref) =>
   );
 });
 
-export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, average, myId, emojiThrows, onThrowEmoji, onEmojiThrowComplete }, ref) => {
+export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, average, myId, emojiThrows, onThrowEmoji, onEmojiThrowComplete, onSetAdmin }, ref) => {
   const cameraControllerRef = useRef<{ resetCamera: () => void }>(null);
 
   useImperativeHandle(ref, () => ({
@@ -520,6 +548,9 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
                   {/* PLAYERS */}
                   {reorderedPlayers.map((player, i) => {
                     const { pos, rot } = getSeatPosition(i, reorderedPlayers.length);
+                    // Determine if viewer is admin (host or has isAdmin flag)
+                    const me = players.find(p => p.id === myId);
+                    const isViewerAdmin = me?.isHost || me?.isAdmin || false;
                     return (
                         <PlayerSeat
                           key={player.id}
@@ -528,7 +559,9 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
                           rotation={rot}
                           status={status}
                           isMe={player.id === myId}
+                          isViewerAdmin={isViewerAdmin}
                           onPlayerClick={onThrowEmoji}
+                          onSetAdmin={onSetAdmin}
                         />
                     );
                   })}

@@ -30,6 +30,9 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 }) => {
   const me = gameState.players.find((p) => p.id === myId);
   const isHost = me?.isHost;
+  const isAdmin = me?.isAdmin;
+  // Admins have same controls as host (reveal, reset, settings)
+  const hasAdminControls = isHost || isAdmin;
   const myVote = me?.vote;
 
   return (
@@ -44,8 +47,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           </p>
         </div>
         
-        {/* Host Controls */}
-        {isHost && (
+        {/* Admin Controls - shown to host and admins */}
+        {hasAdminControls && (
           <div className="flex gap-2 bg-black/60 p-2 rounded-xl border border-gray-700/50 backdrop-blur-md shadow-xl">
              {gameState.status === GameStatus.VOTING ? (
                 <button
@@ -102,7 +105,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 
          {/* Settings Panel - Bottom Right (left of weapon selector) */}
          <SettingsPanel
-           isHost={!!isHost}
+           isHost={!!hasAdminControls}
            poopDisabled={gameState.poopDisabled}
            onTogglePoop={onTogglePoop}
          />

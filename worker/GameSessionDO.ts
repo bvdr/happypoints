@@ -292,6 +292,17 @@ export class GameSessionDO {
         break;
       }
 
+      case 'SET_ADMIN': {
+        // Update player's admin status (host/admin validation happens client-side)
+        const { playerId, isAdmin } = message.payload;
+        const targetPlayer = this.gameState.players.find(p => p.id === playerId);
+        if (targetPlayer) {
+          targetPlayer.isAdmin = isAdmin;
+          this.broadcast(message);
+        }
+        break;
+      }
+
       case 'LEAVE': {
         const { id } = message.payload;
         this.handlePlayerLeave(id);

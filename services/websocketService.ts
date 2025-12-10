@@ -87,9 +87,9 @@ export const useGameSession = (
   );
 
   const revealVotes = useCallback(() => {
-    // Check if I'm host
+    // Check if I'm host or admin
     const me = gameState.players.find(p => p.id === myId);
-    if (!me?.isHost) return;
+    if (!me?.isHost && !me?.isAdmin) return;
 
     // Send REVEAL immediately with no AI summary
     send({
@@ -117,9 +117,9 @@ export const useGameSession = (
   }, [send, myId, gameState.players]);
 
   const resetRound = useCallback(() => {
-    // Check if I'm host
+    // Check if I'm host or admin
     const me = gameState.players.find(p => p.id === myId);
-    if (!me?.isHost) return;
+    if (!me?.isHost && !me?.isAdmin) return;
 
     send({ type: 'RESET', payload: null });
   }, [send, myId, gameState.players]);
@@ -142,14 +142,25 @@ export const useGameSession = (
 
   const togglePoop = useCallback(
     (disabled: boolean) => {
-      // Check if I'm host
+      // Check if I'm host or admin
       const me = gameState.players.find(p => p.id === myId);
-      if (!me?.isHost) return;
+      if (!me?.isHost && !me?.isAdmin) return;
 
       // Optimistic local update for immediate UI feedback
       setGameState(prev => ({ ...prev, poopDisabled: disabled }));
 
       send({ type: 'TOGGLE_POOP', payload: { disabled } });
+    },
+    [send, myId, gameState.players]
+  );
+
+  const setAdmin = useCallback(
+    (playerId: string, isAdmin: boolean) => {
+      // Only host or admins can set admin status
+      const me = gameState.players.find(p => p.id === myId);
+      if (!me?.isHost && !me?.isAdmin) return;
+
+      send({ type: 'SET_ADMIN', payload: { playerId, isAdmin } });
     },
     [send, myId, gameState.players]
   );
@@ -326,6 +337,16 @@ export const useGameSession = (
             }));
             break;
 
+          case 'SET_ADMIN':
+            // Update player's admin status
+            setGameState(prev => ({
+              ...prev,
+              players: prev.players.map(p =>
+                p.id === message.payload.playerId ? { ...p, isAdmin: message.payload.isAdmin } : p
+              ),
+            }));
+            break;
+
           case 'HIT_PLAYER':
             if (message.payload.reset) {
               setGameState(prev => ({
@@ -459,6 +480,7 @@ export const useGameSession = (
     throwEmoji,
     removeEmojiThrow,
     togglePoop,
+    setAdmin,
     isConnected,
   };
 };

@@ -3,6 +3,7 @@ import { GameState, GameStatus } from '../types';
 import { FIBONACCI_DECK } from '../constants';
 import { Users, RotateCcw, Eye, Info, RefreshCw } from 'lucide-react';
 import { WeaponSelector } from './WeaponSelector';
+import { SettingsPanel } from './SettingsPanel';
 
 interface UIOverlayProps {
   myId: string;
@@ -13,6 +14,7 @@ interface UIOverlayProps {
   onResetCamera: () => void;
   selectedWeapon: string;
   onSelectWeapon: (emoji: string) => void;
+  onTogglePoop?: (disabled: boolean) => void;
 }
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
@@ -24,6 +26,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onResetCamera,
   selectedWeapon,
   onSelectWeapon,
+  onTogglePoop,
 }) => {
   const me = gameState.players.find((p) => p.id === myId);
   const isHost = me?.isHost;
@@ -45,14 +48,14 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
         {isHost && (
           <div className="flex gap-2 bg-black/60 p-2 rounded-xl border border-gray-700/50 backdrop-blur-md shadow-xl">
              {gameState.status === GameStatus.VOTING ? (
-                <button 
+                <button
                   onClick={onReveal}
                   className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-yellow-600 to-yellow-500 hover:from-yellow-500 hover:to-yellow-400 text-white rounded-lg font-bold shadow-lg transition-all transform hover:scale-105"
                 >
                   <Eye size={18} /> REVEAL
                 </button>
              ) : (
-                <button 
+                <button
                   onClick={onReset}
                   className="flex items-center gap-2 px-6 py-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white rounded-lg font-bold shadow-lg transition-all transform hover:scale-105"
                 >
@@ -97,10 +100,18 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
            <RefreshCw size={20} />
          </button>
 
+         {/* Settings Panel - Bottom Right (left of weapon selector) */}
+         <SettingsPanel
+           isHost={!!isHost}
+           poopDisabled={gameState.poopDisabled}
+           onTogglePoop={onTogglePoop}
+         />
+
          {/* Weapon Selector - Bottom Right */}
          <WeaponSelector
            selectedWeapon={selectedWeapon}
            onSelectWeapon={onSelectWeapon}
+           poopDisabled={gameState.poopDisabled}
          />
 
          {/* Added pt-12 and items-end to allow space for the pop-up animation without clipping */}

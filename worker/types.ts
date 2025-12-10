@@ -34,6 +34,7 @@ export interface GameState {
   average: number | null;
   aiSummary: string | null;
   emojiThrows: EmojiThrow[];
+  poopDisabled?: boolean; // Host can disable poop emoji - shows rose instead
 }
 
 // WebSocket message types
@@ -46,6 +47,7 @@ export type SocketMessage =
   | { type: 'LEAVE'; payload: { id: string } }
   | { type: 'THROW_EMOJI'; payload: EmojiThrow }
   | { type: 'HIT_PLAYER'; payload: { throwId?: string; playerId: string; damage?: number; timestamp?: number; reset?: boolean; emoji?: string } }
+  | { type: 'TOGGLE_POOP'; payload: { disabled: boolean } }
   | { type: 'STATE_SYNC'; payload: GameState }
   | { type: 'ERROR'; payload: { message: string } };
 

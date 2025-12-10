@@ -13,6 +13,7 @@ const DEFAULT_STATE: GameState = {
   average: null,
   aiSummary: null,
   emojiThrows: [],
+  poopDisabled: false,
 };
 
 // Get session state from localStorage (shared across all tabs)
@@ -218,6 +219,21 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     broadcast({ type: 'THROW_EMOJI', payload: emojiThrow });
   }, [broadcast, myId, updateGameState, selectedWeapon]);
 
+  // Toggle poop emoji on/off (host only) - shows rose when disabled
+  const togglePoop = useCallback((disabled: boolean) => {
+    // Check if I'm host
+    const currentState = getSessionState(sessionId);
+    const me = currentState.players.find(p => p.id === myId);
+    if (!me?.isHost) return;
+
+    updateGameState(prev => ({
+      ...prev,
+      poopDisabled: disabled,
+    }));
+
+    broadcast({ type: 'TOGGLE_POOP', payload: { disabled } });
+  }, [broadcast, myId, sessionId, updateGameState]);
+
   // Remove completed emoji throw from state and damage the target player
   const removeEmojiThrow = useCallback((throwId: string) => {
     // Find the throw to get target player ID
@@ -388,6 +404,14 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
           });
           break;
 
+        case 'TOGGLE_POOP':
+          // Update poop disabled state
+          updateGameState(prev => ({
+            ...prev,
+            poopDisabled: payload.disabled,
+          }));
+          break;
+
         case 'HIT_PLAYER':
           if (payload.reset) {
             // Reset player health
@@ -492,6 +516,7 @@ export const useGameSession = (initialPlayerName: string, sessionId: string, isH
     revealVotes,
     resetRound,
     throwEmoji,
-    removeEmojiThrow
+    removeEmojiThrow,
+    togglePoop
   };
 };

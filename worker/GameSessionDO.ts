@@ -22,6 +22,7 @@ export class GameSessionDO {
       average: null,
       aiSummary: null,
       emojiThrows: [],
+      poopDisabled: false,
     };
   }
 
@@ -280,6 +281,13 @@ export class GameSessionDO {
       case 'AI_SUMMARY': {
         // Update AI summary asynchronously after reveal
         this.gameState.aiSummary = message.payload.aiSummary;
+        this.broadcast(message);
+        break;
+      }
+
+      case 'TOGGLE_POOP': {
+        // Only host can toggle poop - host validation happens client-side
+        this.gameState.poopDisabled = message.payload.disabled;
         this.broadcast(message);
         break;
       }

@@ -10,6 +10,7 @@ const DEFAULT_STATE: GameState = {
   average: null,
   aiSummary: null,
   emojiThrows: [],
+  poopDisabled: false,
 };
 
 /**
@@ -137,6 +138,20 @@ export const useGameSession = (
       send({ type: 'THROW_EMOJI', payload: emojiThrow });
     },
     [send, myId, selectedWeapon]
+  );
+
+  const togglePoop = useCallback(
+    (disabled: boolean) => {
+      // Check if I'm host
+      const me = gameState.players.find(p => p.id === myId);
+      if (!me?.isHost) return;
+
+      // Optimistic local update for immediate UI feedback
+      setGameState(prev => ({ ...prev, poopDisabled: disabled }));
+
+      send({ type: 'TOGGLE_POOP', payload: { disabled } });
+    },
+    [send, myId, gameState.players]
   );
 
   const removeEmojiThrow = useCallback(
@@ -303,6 +318,14 @@ export const useGameSession = (
             });
             break;
 
+          case 'TOGGLE_POOP':
+            // Update poop disabled state from server
+            setGameState(prev => ({
+              ...prev,
+              poopDisabled: message.payload.disabled,
+            }));
+            break;
+
           case 'HIT_PLAYER':
             if (message.payload.reset) {
               setGameState(prev => ({
@@ -435,6 +458,7 @@ export const useGameSession = (
     resetRound,
     throwEmoji,
     removeEmojiThrow,
+    togglePoop,
     isConnected,
   };
 };

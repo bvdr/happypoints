@@ -6,9 +6,10 @@ export const generateVoteSummary = async (votes: (string | number)[]): Promise<s
   try {
     // Determine Worker URL based on environment
     const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    // Production worker is at api.happypoints.app (custom domain on CF Worker)
     const workerUrl = isDevelopment
       ? 'http://localhost:8787'
-      : `https://${import.meta.env.VITE_WORKER_URL || 'planning-poker-worker.bogdanvdragomir4273.workers.dev'}`;
+      : `https://${import.meta.env.VITE_WORKER_URL || 'api.happypoints.app'}`;
 
     const response = await fetch(`${workerUrl}/api/generate-summary`, {
       method: 'POST',

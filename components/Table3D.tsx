@@ -180,6 +180,27 @@ const Card3D: React.FC<Card3DProps> = ({
   );
 };
 
+// Separate component for disconnection animation - only mounts when player is disconnected
+// This prevents useFrame from running for ALL players every frame (was 540 calls/sec with 9 players)
+interface DisconnectAnimationProps {
+  groupRef: React.RefObject<THREE.Group>;
+  targetY: number;
+}
+
+const DisconnectAnimation: React.FC<DisconnectAnimationProps> = ({ groupRef, targetY }) => {
+  useFrame(() => {
+    if (groupRef.current) {
+      // Elevate upward during fade out
+      groupRef.current.position.y = THREE.MathUtils.lerp(
+        groupRef.current.position.y,
+        targetY + 5, // Float upward
+        0.05
+      );
+    }
+  });
+  return null;
+};
+
 interface PlayerSeatProps {
   player: Player;
   position: [number, number, number];
@@ -214,28 +235,10 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
     }
   };
 
-  // Push cards slightly towards center
-  const cardPos: [number, number, number] = [
-     position[0] * 0.75,
-     0.2,
-     position[2] * 0.75
-  ];
-  const cardRot: [number, number, number] = [-Math.PI / 2, rotation[1], 0];
-
-  // Animation for disconnected players: fade to transparent, then elevate and disappear (teleportation effect)
-  useFrame(() => {
-    if (groupRef.current && player.isDisconnected) {
-      // Elevate upward during fade out
-      groupRef.current.position.y = THREE.MathUtils.lerp(
-        groupRef.current.position.y,
-        position[1] + 5, // Float upward
-        0.05
-      );
-    }
-  });
-
   return (
     <group ref={groupRef} position={[position[0], position[1], position[2]]}>
+      {/* Only mount animation component when disconnected - prevents 540 useFrame calls/sec with 9 players */}
+      {player.isDisconnected && <DisconnectAnimation groupRef={groupRef} targetY={position[1]} />}
       <Html position={[0, 1.5, 0]} center sprite distanceFactor={8} zIndexRange={[100, 0]}>
         <div
           className={`

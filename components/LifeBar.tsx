@@ -24,28 +24,34 @@ export const LifeBar: React.FC<LifeBarProps> = ({ health, maxHealth = 100, lastH
     // Show bar immediately on hit
     setOpacity(1);
 
-    // Calculate time since last hit and fade out after 3 seconds
-    const updateOpacity = () => {
-      const timeSinceHit = Date.now() - lastHitTimestamp;
-      const fadeStartTime = 3000; // Start fading after 3 seconds
-      const fadeDuration = 500; // Fade out over 500ms
+    const fadeStartTime = 3000; // Start fading after 3 seconds
+    const fadeDuration = 500; // Fade out over 500ms
+    let rafId: number;
 
-      if (timeSinceHit < fadeStartTime) {
-        setOpacity(1);
-      } else if (timeSinceHit < fadeStartTime + fadeDuration) {
-        // Gradual fade
+    // Use requestAnimationFrame instead of setInterval for better performance
+    // Animation loop stops automatically when fade completes (no wasted CPU cycles)
+    const animate = () => {
+      const timeSinceHit = Date.now() - lastHitTimestamp;
+
+      if (timeSinceHit >= fadeStartTime + fadeDuration) {
+        // Fade complete - stop the animation loop (key optimization)
+        setOpacity(0);
+        return;
+      }
+
+      if (timeSinceHit >= fadeStartTime) {
+        // Gradual fade in progress
         const fadeProgress = (timeSinceHit - fadeStartTime) / fadeDuration;
         setOpacity(1 - fadeProgress);
-      } else {
-        setOpacity(0);
       }
+
+      // Continue animation loop until fade completes
+      rafId = requestAnimationFrame(animate);
     };
 
-    // Update opacity every 100ms for smooth fade
-    const interval = setInterval(updateOpacity, 100);
-    updateOpacity(); // Initial update
+    rafId = requestAnimationFrame(animate);
 
-    return () => clearInterval(interval);
+    return () => cancelAnimationFrame(rafId);
   }, [lastHitTimestamp]);
 
   // Color changes based on health level

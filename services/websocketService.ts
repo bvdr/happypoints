@@ -13,6 +13,14 @@ const DEFAULT_STATE: GameState = {
   poopDisabled: false,
 };
 
+// Performance constants for emoji throws
+// TTL prevents memory leaks from network desync - throws older than this are garbage collected
+const EMOJI_THROW_TTL_MS = 5000;
+// Max concurrent throws prevents exponential performance degradation with many players
+const MAX_CONCURRENT_THROWS = 20;
+// Cleanup runs every second to remove stale throws
+const EMOJI_CLEANUP_INTERVAL_MS = 1000;
+
 /**
  * WebSocket service for real multiplayer via Cloudflare Workers
  * Connects to Worker endpoint and handles real-time game state synchronization
@@ -172,10 +180,17 @@ export const useGameSession = (
       if (throwData) {
         const damage = 1;
 
+        // Immediate local removal to prevent zombie components
+        // Don't wait for server round-trip - removes the EmojiThrow component instantly
+        setGameState(prev => ({
+          ...prev,
+          emojiThrows: prev.emojiThrows.filter(t => t.id !== throwId),
+        }));
+
         send({
           type: 'HIT_PLAYER',
           payload: {
-            throwId, // Include throwId so we remove the correct emoji
+            throwId, // Include throwId so server can sync (other clients will remove it too)
             playerId: throwData.toPlayerId,
             damage,
             timestamp: Date.now(),
@@ -309,9 +324,23 @@ export const useGameSession = (
               const emojiThrow = message.payload;
               const isPoop = emojiThrow.emoji === '💩';
 
+              // Enforce max concurrent throws limit to prevent performance degradation
+              // If at limit, remove oldest throw to make room for new one
+              let updatedThrows = prev.emojiThrows;
+              if (updatedThrows.length >= MAX_CONCURRENT_THROWS) {
+                // Find and remove oldest by timestamp - O(n) instead of sorting O(n log n)
+                const oldestIndex = updatedThrows.reduce((minIdx, curr, idx, arr) =>
+                  curr.timestamp < arr[minIdx].timestamp ? idx : minIdx, 0
+                );
+                updatedThrows = [
+                  ...updatedThrows.slice(0, oldestIndex),
+                  ...updatedThrows.slice(oldestIndex + 1)
+                ];
+              }
+
               return {
                 ...prev,
-                emojiThrows: [...prev.emojiThrows, emojiThrow],
+                emojiThrows: [...updatedThrows, emojiThrow],
                 players: isPoop
                   ? prev.players.map(p => {
                       if (p.id === emojiThrow.fromPlayerId) {
@@ -455,6 +484,30 @@ export const useGameSession = (
       return () => clearTimeout(timer);
     }
   }, [gameState.players, gameState.status, myId, revealVotes]);
+
+  // TTL cleanup for emoji throws - prevents memory leak from network desync
+  // Runs every second and removes throws older than EMOJI_THROW_TTL_MS
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      const now = Date.now();
+      setGameState(prev => {
+        // Skip if no throws to clean (avoid unnecessary work in idle sessions)
+        if (prev.emojiThrows.length === 0) return prev;
+
+        // Single pass filter - avoid filtering twice
+        const freshThrows = prev.emojiThrows.filter(t => now - t.timestamp < EMOJI_THROW_TTL_MS);
+        // Only update state if something was actually removed
+        if (freshThrows.length === prev.emojiThrows.length) return prev;
+
+        return {
+          ...prev,
+          emojiThrows: freshThrows,
+        };
+      });
+    }, EMOJI_CLEANUP_INTERVAL_MS);
+
+    return () => clearInterval(cleanup);
+  }, []);
 
   // Send LEAVE message on window close
   useEffect(() => {

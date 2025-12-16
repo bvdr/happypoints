@@ -42,6 +42,9 @@ export const useGameSession = (
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Ref to always have current weapon value (avoids stale closure in throwEmoji)
+  const selectedWeaponRef = useRef(selectedWeapon);
+  selectedWeaponRef.current = selectedWeapon;
 
   // Determine WebSocket URL based on environment
   const getWebSocketUrl = useCallback(() => {
@@ -139,13 +142,13 @@ export const useGameSession = (
         id: throwId,
         fromPlayerId: myId,
         toPlayerId: targetPlayerId,
-        emoji: selectedWeapon,
+        emoji: selectedWeaponRef.current, // Use ref for current value (avoids stale closure)
         timestamp: Date.now(),
       };
 
       send({ type: 'THROW_EMOJI', payload: emojiThrow });
     },
-    [send, myId, selectedWeapon]
+    [send, myId]
   );
 
   const togglePoop = useCallback(

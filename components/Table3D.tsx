@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, Suspense, forwardRef, useImperativeHandle, useState } from 'react';
+import React, { useRef, useMemo, Suspense, forwardRef, useImperativeHandle, useState, memo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Text, Environment, ContactShadows, OrbitControls, Html, useProgress } from '@react-three/drei';
 import * as THREE from 'three';
@@ -212,7 +212,9 @@ interface PlayerSeatProps {
   onSetAdmin?: (playerId: string, isAdmin: boolean) => void;
 }
 
-const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, status, isMe, isViewerAdmin, onPlayerClick, onSetAdmin }) => {
+// Memoized to prevent re-renders when other players' state changes
+// Only re-renders when THIS player's relevant props change
+const PlayerSeat: React.FC<PlayerSeatProps> = memo(({ player, position, rotation, status, isMe, isViewerAdmin, onPlayerClick, onSetAdmin }) => {
   const groupRef = useRef<THREE.Group>(null);
   const [showActionMenu, setShowActionMenu] = useState(false);
 
@@ -340,7 +342,28 @@ const PlayerSeat: React.FC<PlayerSeatProps> = ({ player, position, rotation, sta
       {/* 3D cards removed - votes shown in UI badges only */}
     </group>
   );
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render if relevant props changed
+  // This prevents re-renders when other players throw emojis
+  return (
+    prevProps.player.id === nextProps.player.id &&
+    prevProps.player.name === nextProps.player.name &&
+    prevProps.player.vote === nextProps.player.vote &&
+    prevProps.player.health === nextProps.player.health &&
+    prevProps.player.isDisconnected === nextProps.player.isDisconnected &&
+    prevProps.player.isKnockedOut === nextProps.player.isKnockedOut &&
+    prevProps.player.isMonkey === nextProps.player.isMonkey &&
+    prevProps.player.isAdmin === nextProps.player.isAdmin &&
+    prevProps.player.lastHitTimestamp === nextProps.player.lastHitTimestamp &&
+    prevProps.status === nextProps.status &&
+    prevProps.isMe === nextProps.isMe &&
+    prevProps.isViewerAdmin === nextProps.isViewerAdmin &&
+    // Position/rotation change when players join/leave (seat indices shift)
+    prevProps.position[0] === nextProps.position[0] &&
+    prevProps.position[2] === nextProps.position[2] &&
+    prevProps.rotation[1] === nextProps.rotation[1]
+  );
+});
 
 function Loader() {
   const { progress } = useProgress()

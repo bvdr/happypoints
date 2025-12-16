@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useRef, useMemo, memo } from 'react';
 import { Html } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
@@ -14,8 +14,11 @@ interface EmojiThrowProps {
 /**
  * Component that animates an emoji flying from one player position to another.
  * Uses quadratic bezier curve for a natural arc trajectory.
+ *
+ * Memoized to prevent re-renders when new emoji throws are added to the array.
+ * Each throw has unique ID - existing throws shouldn't re-render when new ones appear.
  */
-export const EmojiThrow: React.FC<EmojiThrowProps> = ({
+export const EmojiThrow: React.FC<EmojiThrowProps> = memo(({
   throw: throwData,
   fromPosition,
   toPosition,
@@ -89,4 +92,9 @@ export const EmojiThrow: React.FC<EmojiThrowProps> = ({
       </Html>
     </group>
   );
-};
+}, (prevProps, nextProps) => {
+  // Only check ID - throws are "fire-and-forget" animations
+  // Once mounted, trajectory and callback are captured and shouldn't change
+  // This prevents re-renders when new throws are added to the parent array
+  return prevProps.throw.id === nextProps.throw.id;
+});

@@ -79,9 +79,9 @@ export const EmojiThrow: React.FC<EmojiThrowProps> = memo(({
       ref={groupRef}
       position={[fromPosition.x, fromPosition.y, fromPosition.z]}
     >
-      <Html transform sprite distanceFactor={8} zIndexRange={[1000, 0]}>
+      <Html center zIndexRange={[1000, 0]}>
         <div
-          className="text-5xl pointer-events-none"
+          className="text-4xl pointer-events-none select-none"
           style={{
             willChange: 'transform',
             filter: 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.5))',

@@ -45,6 +45,8 @@ export const useGameSession = (
   // Ref to always have current weapon value (avoids stale closure in throwEmoji)
   const selectedWeaponRef = useRef(selectedWeapon);
   selectedWeaponRef.current = selectedWeapon;
+  // Track knockout reset timeouts per player to prevent duplicates and allow cleanup
+  const knockoutTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   // Determine WebSocket URL based on environment
   const getWebSocketUrl = useCallback(() => {
@@ -204,12 +206,24 @@ export const useGameSession = (
         // Schedule health reset if knocked out
         const targetPlayer = gameState.players.find(p => p.id === throwData.toPlayerId);
         if (targetPlayer && targetPlayer.health - damage <= 0) {
-          setTimeout(() => {
+          const playerId = throwData.toPlayerId;
+
+          // Clear any existing timeout for this player (prevents duplicate resets)
+          const existingTimeout = knockoutTimeoutsRef.current.get(playerId);
+          if (existingTimeout) {
+            clearTimeout(existingTimeout);
+          }
+
+          // Schedule new reset and store reference for cleanup
+          const timeout = setTimeout(() => {
             send({
               type: 'HIT_PLAYER',
-              payload: { playerId: throwData.toPlayerId, reset: true },
+              payload: { playerId, reset: true },
             });
+            knockoutTimeoutsRef.current.delete(playerId);
           }, 3000);
+
+          knockoutTimeoutsRef.current.set(playerId, timeout);
         }
       }
     },
@@ -510,6 +524,14 @@ export const useGameSession = (
     }, EMOJI_CLEANUP_INTERVAL_MS);
 
     return () => clearInterval(cleanup);
+  }, []);
+
+  // Cleanup knockout timeouts on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      knockoutTimeoutsRef.current.forEach(timeout => clearTimeout(timeout));
+      knockoutTimeoutsRef.current.clear();
+    };
   }, []);
 
   // Send LEAVE message on window close

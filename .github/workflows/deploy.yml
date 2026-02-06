@@ -43,4 +43,5 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy dist --project-name=happypoints --commit-dirty=true
+          # Cloudflare Pages project is still named "planning-poker" — Pages doesn't support renaming
+          command: pages deploy dist --project-name=planning-poker --commit-dirty=true

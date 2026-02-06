@@ -1,243 +1,186 @@
-# High Stakes Planning Poker 🏐
+# HappyPoints
 
-A real-time, multiplayer planning poker app powered by Cloudflare Workers + Durable Objects.
+Real-time 3D planning poker for agile teams. Estimate stories together with animated card reveals, emoji battles, and AI-powered vote summaries.
+
+**[happypoints.app](https://happypoints.app)**
 
 ## Features
 
-- ✅ Real-time multiplayer across devices (via WebSockets)
-- ✅ 3D poker table with animated cards
-- ✅ Emoji throwing mini-game between players
-- ✅ AI-powered vote summaries (Gemini)
-- ✅ Automatic vote reveal after all players vote
-- ✅ Host controls for revealing and resetting rounds
-- ✅ No database needed - state managed by Durable Objects
+- **Real-time multiplayer** via WebSockets — syncs across devices instantly
+- **3D poker table** with animated card reveals (Three.js + React Three Fiber)
+- **Fibonacci deck** — 1, 2, 3, 5, 8, 13, 21, ?, coffee
+- **Auto-reveal** — votes flip automatically 5s after everyone votes
+- **AI summaries** — Gemini generates a witty comment about the team's consensus (or lack thereof)
+- **Emoji throwing** — throw emojis at teammates between rounds, complete with health bars and knockouts
+- **Host controls** — reveal votes early, reset rounds, transfer host role
+- **No sign-up** — share a 6-character session link and start estimating
 
 ## Tech Stack
 
-### Frontend
-- React 19
-- Three.js + React Three Fiber
-- Vite
-- Tailwind CSS
-- TypeScript
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS |
+| 3D | Three.js, React Three Fiber, Drei |
+| Backend | Cloudflare Workers, Durable Objects |
+| Real-time | WebSocket API |
+| AI | Gemini 2.5 Flash |
+| Hosting | Cloudflare Pages + Workers |
+| CI/CD | GitHub Actions |
 
-### Backend
-- Cloudflare Workers
-- Durable Objects (WebSocket state management)
-- WebSocket API
+## Architecture
+
+```
+Browser (React + Three.js)
+    │
+    │ WebSocket
+    ▼
+Cloudflare Worker (api.happypoints.app)
+    │
+    │ Routes by session ID
+    ▼
+Durable Object (one per session)
+    │
+    │ Broadcasts state changes
+    ▼
+All connected browsers
+```
+
+Each session gets its own Durable Object instance. State lives in memory — no database needed.
 
 ## Local Development
 
 ### Prerequisites
 
-- Node.js 18+
-- npm or yarn
-- Cloudflare account (for deployment)
+- Node.js 20+
+- npm
+- Cloudflare account (free tier, for Worker dev server)
 
 ### Setup
 
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+```bash
+# Install dependencies
+npm install
 
-2. **Create environment file:**
-   ```bash
-   cp .env.example .env
-   ```
+# Create env file
+cp .env.example .env
+```
 
-3. **Add your Gemini API key to `.env`:**
-   ```env
-   VITE_GEMINI_API_KEY=your_key_here
-   ```
+Edit `.env` and add your [Gemini API key](https://aistudio.google.com/apikey) (optional — app works without it, just no AI summaries):
 
-### Run Development Servers
+```env
+VITE_GEMINI_API_KEY=your_key_here
+```
 
-**Option 1: Run both servers together (recommended)**
+### Run
+
 ```bash
 npm run dev:all
 ```
 
-This starts:
-- Frontend: `http://localhost:3000`
-- Worker: `http://localhost:8787`
+This starts both servers concurrently:
+- **Frontend**: http://localhost:3000
+- **Worker**: http://localhost:8787
 
-**Option 2: Run separately**
+Open multiple tabs to simulate multiple players.
 
-Terminal 1 - Frontend:
-```bash
-npm run dev
-```
+### Available Scripts
 
-Terminal 2 - Worker:
-```bash
-npm run dev:worker
-```
-
-### Testing Locally
-
-1. Open `http://localhost:3000`
-2. Create a game session
-3. Copy the session URL
-4. Open in another browser/device
-5. Both clients should sync in real-time via WebSocket
-
-## Architecture
-
-### How It Works
-
-```
-┌─────────────┐      WebSocket      ┌──────────────┐
-│   Browser   │◄──────────────────►│   Worker     │
-│  (React)    │                     │              │
-└─────────────┘                     └──────┬───────┘
-                                           │
-┌─────────────┐      WebSocket      ┌──────▼───────┐
-│   Browser   │◄──────────────────►│   Durable    │
-│  (React)    │                     │   Object     │
-└─────────────┘                     └──────────────┘
-```
-
-1. **Session Creation**: Client generates 6-char session ID
-2. **WebSocket Connection**: Client connects to Worker at `/ws/:sessionId`
-3. **Durable Object**: Worker routes connection to session-specific DO
-4. **State Management**: DO holds game state in memory, broadcasts to all clients
-5. **Real-time Sync**: All actions broadcast immediately to connected clients
-
-### Key Files
-
-- `services/websocketService.ts` - WebSocket client
-- `worker/index.ts` - Worker routing
-- `worker/GameSessionDO.ts` - Durable Object (session state)
-- `App.tsx` - Main React component
-- `wrangler.toml` - Worker configuration
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Frontend only (Vite, port 3000) |
+| `npm run dev:worker` | Worker only (Wrangler, port 8787) |
+| `npm run dev:all` | Both servers concurrently |
+| `npm run build` | Build frontend to `dist/` |
+| `npm run build:worker` | Compile worker TypeScript |
+| `npm run deploy` | Deploy worker to Cloudflare |
+| `npm run deploy:pages` | Deploy frontend to Cloudflare Pages |
 
 ## Deployment
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for full deployment guide.
+Deployments are automated via GitHub Actions. Every push to `main` triggers a full deploy.
 
-### Quick Deploy
+### What happens on push
 
-1. **Login to Cloudflare:**
-   ```bash
-   wrangler login
-   ```
+1. Installs dependencies
+2. Builds frontend (`npm run build`)
+3. Builds worker (`npm run build:worker`)
+4. Deploys Worker to Cloudflare (handles WebSocket connections)
+5. Deploys Pages to Cloudflare (serves the frontend)
 
-2. **Deploy Worker:**
-   ```bash
-   npm run deploy
-   ```
+### Required GitHub Secrets
 
-3. **Deploy Pages:**
-   ```bash
-   npm run deploy:pages
-   ```
+| Secret | Description |
+|--------|-------------|
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+| `CLOUDFLARE_API_TOKEN` | API token with Workers + Pages permissions |
 
-4. **Update environment variables** in Cloudflare dashboard
+### Manual Deploy
 
-## Environment Variables
-
-### Development (`.env`)
-```env
-VITE_GEMINI_API_KEY=your_gemini_api_key
+```bash
+wrangler login
+npm run deploy          # Worker
+npm run deploy:pages    # Frontend
 ```
 
-### Production (Cloudflare Pages Dashboard)
-```env
-VITE_GEMINI_API_KEY=your_gemini_api_key
-VITE_WORKER_URL=your-worker.workers.dev
-```
+### Environment Variables (Production)
+
+Set these in the Cloudflare Pages dashboard:
+
+| Variable | Description |
+|----------|-------------|
+| `VITE_GEMINI_API_KEY` | Gemini API key for AI summaries |
+| `VITE_WORKER_URL` | Worker URL (e.g., `api.happypoints.app`) |
+
+### Custom Domain
+
+The worker is configured for `api.happypoints.app` in `wrangler.toml`. To use a different domain, update the `routes` section and the `CORS_ORIGIN` values.
 
 ## Project Structure
 
 ```
-planning-poker/
-├── worker/                 # Cloudflare Worker code
-│   ├── index.ts           # Worker entry point
-│   ├── GameSessionDO.ts   # Durable Object class
-│   └── types.ts           # Shared types
-├── services/              # React services
-│   ├── websocketService.ts # WebSocket client
-│   └── geminiService.ts    # AI summaries
-├── components/            # React components
-│   ├── Table3D.tsx        # 3D poker table
-│   └── UIOverlay.tsx      # 2D UI layer
-├── App.tsx                # Main component
-├── wrangler.toml          # Worker config
-└── vite.config.ts         # Vite config
+happypoints/
+├── App.tsx                    # Entry — session routing, player setup, landing screen
+├── types.ts                   # Shared types (Player, GameState, CardValue, etc.)
+├── constants.ts               # Fibonacci deck, table colors, dimensions
+├── worker/
+│   ├── index.ts               # Worker entry — routes WebSocket, health, API
+│   └── GameSessionDO.ts       # Durable Object — session state + broadcast
+├── services/
+│   ├── websocketService.ts    # useGameSession hook — WebSocket client + game logic
+│   └── geminiService.ts       # AI vote summary via worker API
+├── components/
+│   ├── Table3D.tsx            # 3D poker table, player seats, camera
+│   ├── UIOverlay.tsx          # 2D overlay — card deck, controls, summary
+│   ├── EmojiThrow.tsx         # Animated emoji projectile
+│   ├── LifeBar.tsx            # Player health bar
+│   ├── WeaponSelector.tsx     # Emoji picker
+│   └── SettingsPanel.tsx      # Host settings
+├── wrangler.toml              # Cloudflare Worker config
+├── vite.config.ts             # Vite config (port 3000, @ alias)
+└── .github/workflows/
+    └── deploy.yml             # CI/CD — auto-deploy on push to main
 ```
 
-## Game Features
+## How It Works
 
-### Voting
-- Click a card to vote
-- Host can reveal votes manually or wait for auto-reveal (5s after all vote)
-- Average is calculated from numeric votes
-
-### Emoji Throwing
-- Click player avatars to throw emojis
-- Hit players lose health
-- Knocked-out players respawn after 3 seconds
-
-### Host Controls
-- First player in session becomes host
-- Host can reveal votes and reset rounds
-- Host role transfers to next player if host leaves
+1. A player creates a session (generates a 6-character ID)
+2. Other players join via the shared link
+3. Everyone connects via WebSocket to the same Durable Object
+4. Players pick cards — votes are hidden until revealed
+5. After all votes are in, cards auto-reveal after 5 seconds (or the host reveals early)
+6. Gemini generates a summary of the voting consensus
+7. Host resets the round for the next story
+8. Between rounds, throw emojis at each other for fun
 
 ## Costs
 
-Using Cloudflare free tier:
-- **Workers**: 100k requests/day
-- **Durable Objects**: 1M requests/month
-- **Pages**: 500 builds/month
+Runs entirely on Cloudflare's free tier:
 
-Should be more than enough for moderate usage.
-
-## Development Tips
-
-### Watch Worker Logs
-```bash
-wrangler tail
-```
-
-### Test WebSocket Connection
-```bash
-curl -i -N \
-  -H "Connection: Upgrade" \
-  -H "Upgrade: websocket" \
-  -H "Sec-WebSocket-Version: 13" \
-  -H "Sec-WebSocket-Key: test" \
-  http://localhost:8787/ws/ABC123
-```
-
-### Debug Durable Object State
-The DO has an HTTP endpoint:
-```bash
-curl http://localhost:8787/api/session/ABC123
-```
-
-## Troubleshooting
-
-### WebSocket won't connect
-- Check Worker is running: `http://localhost:8787/health`
-- Check browser console for errors
-- Verify CORS settings in `wrangler.toml`
-
-### Durable Object errors
-- Ensure you've run `wrangler dev` at least once
-- Check bindings in `wrangler.toml`
-- Verify DO is declared in migrations
-
-### Vite build errors
-- Clear cache: `rm -rf node_modules/.vite`
-- Reinstall: `npm install`
-
-## Contributing
-
-Pull requests welcome! Please ensure:
-- TypeScript types are correct
-- Code follows existing patterns
-- No console.logs in production code
+| Resource | Free Limit |
+|----------|-----------|
+| Workers | 100k requests/day |
+| Durable Objects | 1M requests/month |
+| Pages | 500 builds/month |
 
 ## License
 

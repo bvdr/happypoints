@@ -53,6 +53,13 @@ export type SocketMessage =
   | { type: 'STATE_SYNC'; payload: GameState }
   | { type: 'ERROR'; payload: { message: string } };
 
+// Per-connection metadata stored via ws.serializeAttachment/deserializeAttachment
+// Survives hibernation cycles without needing an in-memory Map
+export interface WebSocketAttachment {
+  playerId: string;
+  playerName: string;
+}
+
 export interface Env {
   GAME_SESSION: DurableObjectNamespace;
   CORS_ORIGIN?: string;

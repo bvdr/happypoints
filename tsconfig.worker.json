@@ -4,7 +4,7 @@
     "module": "ES2020",
     "lib": ["ES2020"],
     "types": ["@cloudflare/workers-types"],
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
@@ -13,5 +13,6 @@
     "noEmit": true,
     "isolatedModules": true
   },
-  "include": ["worker/**/*"]
+  "include": ["worker/**/*"],
+  "exclude": ["worker/__tests__/**"]
 }

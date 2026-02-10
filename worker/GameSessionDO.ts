@@ -1,46 +1,73 @@
-import { GameState, GameStatus, SocketMessage, Player, EmojiThrow } from './types';
+import { DurableObject } from 'cloudflare:workers';
+import { GameState, GameStatus, SocketMessage, Player, EmojiThrow, Env, WebSocketAttachment } from './types';
+
+// Cap for emojiThrows array to prevent unbounded memory growth
+const MAX_EMOJI_THROWS = 50;
+// Time to wait after last disconnect before cleaning up storage entirely
+const SESSION_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
+// Time to wait before removing a disconnected player (reconnection grace period)
+const PLAYER_REMOVAL_DELAY_MS = 3000;
+
+const DEFAULT_GAME_STATE: GameState = {
+  sessionId: '',
+  status: GameStatus.VOTING,
+  players: [],
+  average: null,
+  aiSummary: null,
+  emojiThrows: [],
+  poopDisabled: false,
+};
 
 /**
- * GameSessionDO - Durable Object that manages a single game session
- * Each session has its own instance with isolated state
- * Handles WebSocket connections and broadcasts state changes to all connected clients
+ * GameSessionDO - Durable Object that manages a single game session.
+ *
+ * Uses the WebSocket Hibernation API so the DO sleeps between messages
+ * and only bills for actual computation time (instead of wall-clock duration).
+ *
+ * State is persisted to ctx.storage so it survives hibernation cycles.
+ * Session cleanup is handled via alarms — 3s delay for player removal,
+ * 5min delay for full session cleanup after everyone disconnects.
  */
-export class GameSessionDO {
-  private state: DurableObjectState;
-  private sessions: Map<WebSocket, { playerId: string; playerName: string }>;
-  private gameState: GameState;
+export class GameSessionDO extends DurableObject<Env> {
+  private gameState: GameState = { ...DEFAULT_GAME_STATE };
 
-  constructor(state: DurableObjectState) {
-    this.state = state;
-    this.sessions = new Map();
-
-    // Initialize default game state
-    this.gameState = {
-      sessionId: '',
-      status: GameStatus.VOTING,
-      players: [],
-      average: null,
-      aiSummary: null,
-      emojiThrows: [],
-      poopDisabled: false,
-    };
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    // Load persisted game state from storage on wake (survives hibernation)
+    ctx.blockConcurrencyWhile(async () => {
+      const stored = await ctx.storage.get<GameState>('gameState');
+      if (stored) {
+        this.gameState = stored;
+      }
+    });
   }
 
   async fetch(request: Request): Promise<Response> {
-    // Extract session ID from URL path
     const url = new URL(request.url);
     const sessionId = url.pathname.split('/').pop() || '';
 
     if (!this.gameState.sessionId) {
       this.gameState.sessionId = sessionId;
+      await this.persistState();
     }
 
-    // Upgrade to WebSocket
+    // Upgrade to WebSocket using Hibernation API
     if (request.headers.get('Upgrade') === 'websocket') {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
-      await this.handleSession(server, sessionId);
+      // acceptWebSocket makes the connection hibernatable — the DO can sleep
+      // between messages instead of staying alive for the full connection duration
+      this.ctx.acceptWebSocket(server);
+
+      // Store empty attachment — will be populated on JOIN message
+      server.serializeAttachment({ playerId: '', playerName: '' } as WebSocketAttachment);
+
+      // Send current state to newly connected client
+      this.sendToClient(server, {
+        type: 'STATE_SYNC',
+        payload: this.gameState,
+      });
 
       return new Response(null, {
         status: 101,
@@ -55,52 +82,120 @@ export class GameSessionDO {
       });
     }
 
+    // Reset endpoint — clears all state and disconnects all WebSockets.
+    // Used for test cleanup and admin session reset.
+    if (request.method === 'DELETE') {
+      for (const ws of this.ctx.getWebSockets()) {
+        try { ws.close(1000, 'session reset'); } catch { /* already closed */ }
+      }
+      this.gameState = { ...DEFAULT_GAME_STATE, emojiThrows: [], players: [] };
+      await this.ctx.storage.delete('pendingRemovals');
+      await this.ctx.storage.deleteAlarm();
+      await this.persistState();
+      return new Response('OK', { status: 200 });
+    }
+
     return new Response('Expected WebSocket', { status: 400 });
   }
 
-  async handleSession(websocket: WebSocket, sessionId: string) {
-    websocket.accept();
-
-    // Store connection metadata
-    const connectionData = { playerId: '', playerName: '' };
-    this.sessions.set(websocket, connectionData);
-
-    // Send current state to newly connected client
-    this.sendToClient(websocket, {
-      type: 'STATE_SYNC',
-      payload: this.gameState,
-    });
-
-    websocket.addEventListener('message', async (event) => {
-      try {
-        const message: SocketMessage = JSON.parse(event.data as string);
-        await this.handleMessage(websocket, message);
-      } catch (error) {
-        console.error('Error handling message:', error);
-        this.sendToClient(websocket, {
-          type: 'ERROR',
-          payload: { message: 'Invalid message format' },
-        });
-      }
-    });
-
-    websocket.addEventListener('close', () => {
-      const connection = this.sessions.get(websocket);
-      if (connection?.playerId) {
-        // Handle player disconnect
-        this.handlePlayerLeave(connection.playerId);
-      }
-      this.sessions.delete(websocket);
-    });
-
-    websocket.addEventListener('error', () => {
-      this.sessions.delete(websocket);
-    });
+  /**
+   * Hibernation handler — called by the runtime when a WebSocket message arrives.
+   * The DO may have been evicted and reconstructed since the last message.
+   */
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    try {
+      const msg: SocketMessage = JSON.parse(message as string);
+      await this.handleMessage(ws, msg);
+    } catch (error) {
+      console.error('Error handling message:', error);
+      this.sendToClient(ws, {
+        type: 'ERROR',
+        payload: { message: 'Invalid message format' },
+      });
+    }
   }
 
-  async handleMessage(websocket: WebSocket, message: SocketMessage) {
-    const connection = this.sessions.get(websocket);
+  /**
+   * Hibernation handler — called when a WebSocket connection closes.
+   * Must call ws.close() to complete the close handshake.
+   */
+  async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean): Promise<void> {
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+    if (attachment?.playerId) {
+      await this.handlePlayerDisconnect(attachment.playerId);
+    }
+    try { ws.close(code, reason); } catch { /* already closed */ }
+  }
 
+  /**
+   * Hibernation handler — called on non-disconnection WebSocket errors.
+   */
+  async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
+    console.error('WebSocket error:', error);
+    const attachment = ws.deserializeAttachment() as WebSocketAttachment | null;
+    if (attachment?.playerId) {
+      await this.handlePlayerDisconnect(attachment.playerId);
+    }
+    try { ws.close(1011, 'WebSocket error'); } catch { /* already closed */ }
+  }
+
+  /**
+   * Alarm handler — processes pending player removals and session cleanup.
+   * Only one alarm can be active at a time, so we schedule for the earliest
+   * needed time and process everything that's due when it fires.
+   */
+  async alarm(): Promise<void> {
+    const now = Date.now();
+
+    // 1. Process pending player removals
+    const pendingRemovals = (await this.ctx.storage.get<Record<string, number>>('pendingRemovals')) || {};
+    let stateChanged = false;
+
+    for (const [playerId, removalTime] of Object.entries(pendingRemovals)) {
+      if (now >= removalTime) {
+        const player = this.gameState.players.find(p => p.id === playerId);
+        // Only remove if still disconnected (player may have reconnected)
+        if (player && player.isDisconnected) {
+          const wasHost = player.isHost;
+          this.gameState.players = this.gameState.players.filter(p => p.id !== playerId);
+
+          // Promote oldest remaining player to host if the removed player was host
+          if (wasHost && this.gameState.players.length > 0) {
+            const sorted = [...this.gameState.players].sort((a, b) => a.joinedAt - b.joinedAt);
+            sorted[0].isHost = true;
+          }
+          stateChanged = true;
+        }
+        delete pendingRemovals[playerId];
+      }
+    }
+
+    // Save or clean up pending removals
+    if (Object.keys(pendingRemovals).length > 0) {
+      await this.ctx.storage.put('pendingRemovals', pendingRemovals);
+    } else {
+      await this.ctx.storage.delete('pendingRemovals');
+    }
+
+    if (stateChanged) {
+      await this.persistState();
+      this.broadcast({ type: 'STATE_SYNC', payload: this.gameState });
+    }
+
+    // 2. Check for full session cleanup (no connections AND no players left)
+    const activeConnections = this.ctx.getWebSockets();
+    if (activeConnections.length === 0 && this.gameState.players.length === 0) {
+      await this.ctx.storage.deleteAll();
+      return;
+    }
+
+    // 3. Schedule next alarm if needed
+    await this.scheduleNextAlarm();
+  }
+
+  // ─── Message Handling ───────────────────────────────────────────────
+
+  private async handleMessage(ws: WebSocket, message: SocketMessage): Promise<void> {
     switch (message.type) {
       case 'JOIN': {
         const player = message.payload;
@@ -113,22 +208,31 @@ export class GameSessionDO {
           existingPlayers: this.gameState.players.map(p => ({ id: p.id, name: p.name, isHost: p.isHost }))
         });
 
-        // Store player ID for this connection
-        if (connection) {
-          connection.playerId = player.id;
-          connection.playerName = player.name;
-        }
+        // Store player identity on this WebSocket for disconnect handling
+        ws.serializeAttachment({ playerId: player.id, playerName: player.name } as WebSocketAttachment);
 
-        // Check if player already exists
         const existingPlayerIndex = this.gameState.players.findIndex(p => p.id === player.id);
 
         if (existingPlayerIndex !== -1) {
-          // Player reconnecting - mark as not disconnected
+          // Player reconnecting — mark as not disconnected
           console.log('[JOIN] Player reconnecting, marking as not disconnected');
           this.gameState.players[existingPlayerIndex].isDisconnected = false;
+
+          // Cancel pending removal for this player
+          const pendingRemovals = (await this.ctx.storage.get<Record<string, number>>('pendingRemovals')) || {};
+          if (pendingRemovals[player.id]) {
+            delete pendingRemovals[player.id];
+            if (Object.keys(pendingRemovals).length > 0) {
+              await this.ctx.storage.put('pendingRemovals', pendingRemovals);
+            } else {
+              await this.ctx.storage.delete('pendingRemovals');
+            }
+          }
+
+          // Cancel any session cleanup alarm since a player is back
+          await this.scheduleNextAlarm();
         } else {
           // New player joining
-          // Respect client's isHost claim, OR fallback to making first player host
           const hasExistingHost = this.gameState.players.some(p => p.isHost);
           const shouldBeHost = player.isHost || (!hasExistingHost && this.gameState.players.length === 0);
 
@@ -154,6 +258,7 @@ export class GameSessionDO {
           console.log('[JOIN] Player added with isHost:', shouldBeHost);
         }
 
+        await this.persistState();
         this.broadcast(message);
         break;
       }
@@ -163,13 +268,13 @@ export class GameSessionDO {
         const player = this.gameState.players.find(p => p.id === id);
         if (player) {
           player.vote = vote;
+          await this.persistState();
           this.broadcast(message);
         }
         break;
       }
 
       case 'REVEAL': {
-        // Calculate average from votes
         let sum = 0;
         let count = 0;
 
@@ -189,6 +294,7 @@ export class GameSessionDO {
         this.gameState.average = average;
         this.gameState.aiSummary = message.payload.aiSummary || null;
 
+        await this.persistState();
         this.broadcast({
           type: 'REVEAL',
           payload: {
@@ -208,6 +314,7 @@ export class GameSessionDO {
           p.vote = null;
         });
 
+        await this.persistState();
         this.broadcast(message);
         break;
       }
@@ -216,7 +323,10 @@ export class GameSessionDO {
         const emojiThrow = message.payload;
         this.gameState.emojiThrows.push(emojiThrow);
 
-        // Track poop throws - the THROWER transforms to monkey at 5 poops thrown
+        // Cap emojiThrows to prevent unbounded growth
+        this.capEmojiThrows();
+
+        // Track poop throws — the THROWER transforms to monkey at 5 poops thrown
         if (emojiThrow.emoji === '💩') {
           const thrower = this.gameState.players.find(p => p.id === emojiThrow.fromPlayerId);
           if (thrower) {
@@ -227,6 +337,7 @@ export class GameSessionDO {
           }
         }
 
+        await this.persistState();
         this.broadcast(message);
         break;
       }
@@ -235,7 +346,6 @@ export class GameSessionDO {
         const { throwId, playerId, damage, reset, emoji } = message.payload;
 
         if (reset) {
-          // Reset player health
           const player = this.gameState.players.find(p => p.id === playerId);
           if (player) {
             player.health = 100;
@@ -244,12 +354,12 @@ export class GameSessionDO {
         } else if (damage) {
           const player = this.gameState.players.find(p => p.id === playerId);
           if (player) {
-            // Hearts heal instead of damage
             if (emoji === '❤️') {
+              // Hearts heal instead of damage
               player.health = Math.min(100, player.health + damage);
               player.lastHitTimestamp = Date.now();
 
-              // Track heart hits on monkeys - revert to normal avatar at 5 hearts
+              // Track heart hits on monkeys — revert to normal avatar at 5 hearts
               if (player.isMonkey) {
                 player.heartHitCount = (player.heartHitCount || 0) + 1;
                 if (player.heartHitCount >= 5) {
@@ -274,30 +384,31 @@ export class GameSessionDO {
           );
         }
 
+        await this.persistState();
         this.broadcast(message);
         break;
       }
 
       case 'AI_SUMMARY': {
-        // Update AI summary asynchronously after reveal
         this.gameState.aiSummary = message.payload.aiSummary;
+        await this.persistState();
         this.broadcast(message);
         break;
       }
 
       case 'TOGGLE_POOP': {
-        // Only host can toggle poop - host validation happens client-side
         this.gameState.poopDisabled = message.payload.disabled;
+        await this.persistState();
         this.broadcast(message);
         break;
       }
 
       case 'SET_ADMIN': {
-        // Update player's admin status (host/admin validation happens client-side)
         const { playerId, isAdmin } = message.payload;
         const targetPlayer = this.gameState.players.find(p => p.id === playerId);
         if (targetPlayer) {
           targetPlayer.isAdmin = isAdmin;
+          await this.persistState();
           this.broadcast(message);
         }
         break;
@@ -305,54 +416,88 @@ export class GameSessionDO {
 
       case 'LEAVE': {
         const { id } = message.payload;
-        this.handlePlayerLeave(id);
+        await this.handlePlayerDisconnect(id);
         this.broadcast(message);
         break;
       }
     }
   }
 
-  handlePlayerLeave(playerId: string) {
+  // ─── Player Disconnect ─────────────────────────────────────────────
+
+  /**
+   * Marks a player as disconnected and schedules removal via alarm.
+   * If the player reconnects before the alarm fires, the removal is cancelled.
+   */
+  private async handlePlayerDisconnect(playerId: string): Promise<void> {
     const player = this.gameState.players.find(p => p.id === playerId);
     if (!player) return;
 
-    // Mark as disconnected
     player.isDisconnected = true;
+    await this.persistState();
 
-    // Schedule removal after 3 seconds
-    setTimeout(() => {
-      const playerIndex = this.gameState.players.findIndex(p => p.id === playerId);
-      if (playerIndex === -1) return;
+    // Schedule removal after grace period
+    const pendingRemovals = (await this.ctx.storage.get<Record<string, number>>('pendingRemovals')) || {};
+    pendingRemovals[playerId] = Date.now() + PLAYER_REMOVAL_DELAY_MS;
+    await this.ctx.storage.put('pendingRemovals', pendingRemovals);
 
-      const wasHost = this.gameState.players[playerIndex].isHost;
-      this.gameState.players.splice(playerIndex, 1);
+    await this.scheduleNextAlarm();
+  }
 
-      // Promote new host if needed
-      if (wasHost && this.gameState.players.length > 0) {
-        const sortedPlayers = [...this.gameState.players].sort((a, b) => a.joinedAt - b.joinedAt);
-        sortedPlayers[0].isHost = true;
+  // ─── Helpers ────────────────────────────────────────────────────────
+
+  /**
+   * Schedules the next alarm for the earliest pending event (player removal or session cleanup).
+   * Only one alarm can be active at a time — new setAlarm overwrites the previous one.
+   */
+  private async scheduleNextAlarm(): Promise<void> {
+    const pendingRemovals = (await this.ctx.storage.get<Record<string, number>>('pendingRemovals')) || {};
+    const removalTimes = Object.values(pendingRemovals);
+
+    if (removalTimes.length > 0) {
+      // Schedule for the earliest pending player removal
+      const nextTime = Math.min(...removalTimes);
+      await this.ctx.storage.setAlarm(nextTime);
+    } else {
+      const activeConnections = this.ctx.getWebSockets();
+      if (activeConnections.length === 0 && this.gameState.players.length > 0) {
+        // No pending removals, no connections, but players still in state —
+        // schedule full session cleanup after delay
+        await this.ctx.storage.setAlarm(Date.now() + SESSION_CLEANUP_DELAY_MS);
+      } else if (activeConnections.length > 0) {
+        // Active connections exist — no alarm needed
+        await this.ctx.storage.deleteAlarm();
       }
-
-      // Broadcast updated state
-      this.broadcast({
-        type: 'STATE_SYNC',
-        payload: this.gameState,
-      });
-    }, 3000);
+    }
   }
 
-  broadcast(message: SocketMessage) {
-    // Send to all connected WebSocket clients
-    this.sessions.forEach((_, ws) => {
-      this.sendToClient(ws, message);
-    });
+  private async persistState(): Promise<void> {
+    await this.ctx.storage.put('gameState', this.gameState);
   }
 
-  sendToClient(websocket: WebSocket, message: SocketMessage) {
+  /**
+   * Cap emojiThrows to MAX_EMOJI_THROWS, removing oldest entries.
+   */
+  private capEmojiThrows(): void {
+    if (this.gameState.emojiThrows.length > MAX_EMOJI_THROWS) {
+      this.gameState.emojiThrows = this.gameState.emojiThrows.slice(-MAX_EMOJI_THROWS);
+    }
+  }
+
+  private broadcast(message: SocketMessage): void {
+    const payload = JSON.stringify(message);
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.send(payload);
+      } catch (error) {
+        console.error('Error sending message to client:', error);
+      }
+    }
+  }
+
+  private sendToClient(websocket: WebSocket, message: SocketMessage): void {
     try {
-      if (websocket.readyState === 1) { // OPEN
-        websocket.send(JSON.stringify(message));
-      }
+      websocket.send(JSON.stringify(message));
     } catch (error) {
       console.error('Error sending message to client:', error);
     }

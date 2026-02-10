@@ -1,8 +1,9 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useGameSession } from './services/websocketService';
 import { Table3D, Table3DRef } from './components/Table3D';
 import { UIOverlay } from './components/UIOverlay';
 import { Users, Play, Link as LinkIcon, Copy } from 'lucide-react';
+import { initAudioOnGesture } from './utils/sounds';
 
 // Simple hash router extraction
 const getHashParams = () => {
@@ -74,6 +75,16 @@ const GameSession: React.FC<{
 };
 
 const App = () => {
+  // Pre-initialize AudioContext on first user interaction (browser autoplay policy)
+  useEffect(() => {
+    const handler = () => {
+      initAudioOnGesture();
+      document.removeEventListener('click', handler);
+    };
+    document.addEventListener('click', handler, { once: true });
+    return () => document.removeEventListener('click', handler);
+  }, []);
+
   // Load saved name from localStorage on mount
   const [name, setName] = useState(() => localStorage.getItem('happypoints_name') || '');
   const [started, setStarted] = useState(false);

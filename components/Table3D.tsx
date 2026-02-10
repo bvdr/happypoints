@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { Player, GameStatus, EmojiThrow as EmojiThrowType } from '../types';
 import { FELT_COLOR, RAIL_COLOR, CARD_BACK_COLOR, CARD_FRONT_COLOR, TABLE_WIDTH, TABLE_DEPTH, FELT_RING_COLOR } from '../constants';
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { Check, Shield } from 'lucide-react';
+import { Check, Shield, Crown } from 'lucide-react';
 import { EmojiThrow } from './EmojiThrow';
 import { LifeBar } from './LifeBar';
 import { MinusOneUp } from './MinusOneUp';
@@ -267,41 +267,41 @@ const PlayerSeat: React.FC<PlayerSeatProps> = memo(({ player, position, rotation
           {/* Life Bar - shown above avatar, fades after 3 seconds */}
           <LifeBar health={player.health} lastHitTimestamp={player.lastHitTimestamp} />
           {/* Avatar - Doubled size: w-16 h-16 (64px) */}
-          <div
-            className={`
-              relative w-16 h-16 rounded-full border-2 shadow-lg mb-1 overflow-hidden
-              ${player.isMonkey ? 'bg-transparent border-transparent' : 'bg-gray-900'}
-              ${!player.isMonkey && (isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700'))}
-              ${player.isDisconnected ? 'opacity-30' : ''}
-              ${!isMe && !player.isDisconnected ? 'cursor-pointer hover:scale-110 transition-transform' : ''}
-            `}
-            onClick={handleClick}
-          >
-             <img
-               src={avatarUrl}
-               alt={player.name}
-               className="w-full h-full object-cover"
-               style={{
-                 imageRendering: '-webkit-optimize-contrast',
-                 backfaceVisibility: 'hidden',
-                 transform: 'translateZ(0)',
-                 willChange: 'transform'
-               }}
-             />
-             {/* Admin badge overlay */}
-             {player.isAdmin && (
-               <div className="absolute -top-1 -right-1 bg-yellow-500 rounded-full p-0.5 shadow-lg border border-yellow-300">
-                 <Shield size={12} className="text-yellow-900" />
-               </div>
-             )}
+          <div className="relative mb-1">
+            <div
+              className={`
+                w-16 h-16 rounded-full border-2 shadow-lg overflow-hidden
+                ${player.isMonkey ? 'bg-transparent border-transparent' : 'bg-gray-900'}
+                ${!player.isMonkey && (isMe ? 'border-white shadow-white/30' : (player.vote ? 'border-emerald-400 shadow-emerald-500/50' : 'border-gray-700'))}
+                ${player.isDisconnected ? 'opacity-30' : ''}
+                ${!isMe && !player.isDisconnected ? 'cursor-pointer hover:scale-110 transition-transform' : ''}
+              `}
+              onClick={handleClick}
+            >
+               <img
+                 src={avatarUrl}
+                 alt={player.name}
+                 className="w-full h-full object-cover"
+                 style={{
+                   imageRendering: '-webkit-optimize-contrast',
+                   backfaceVisibility: 'hidden',
+                   transform: 'translateZ(0)',
+                   willChange: 'transform'
+                 }}
+               />
+            </div>
           </div>
 
-          {/* Name Tag - Doubled text size */}
+          {/* Name Tag with inline host/admin icon */}
           <div className={`
             bg-gray-900/90 backdrop-blur-md border border-gray-700 text-white rounded px-2 py-1 shadow-xl min-w-[60px] text-center
             ${player.isDisconnected ? 'opacity-30' : ''}
           `}>
-             <div className="font-bold text-[0.8rem] truncate max-w-[100px] text-gray-100">{player.name}</div>
+             <div className="font-bold text-[0.8rem] flex items-center justify-center gap-1 max-w-[120px] text-gray-100">
+               <span className="truncate">{player.name}</span>
+               {player.isHost && <Crown size={12} className="text-amber-400 shrink-0" />}
+               {!player.isHost && player.isAdmin && <Shield size={12} className="text-yellow-400 shrink-0" />}
+             </div>
           </div>
 
           {/* Disconnected indicator */}

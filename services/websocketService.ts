@@ -3,6 +3,7 @@ import { GameState, Player, GameStatus, SocketMessage } from '../types';
 import { generateVoteSummary } from './geminiService';
 import { flashEmojiFavicon } from '../utils/favicon';
 
+
 const DEFAULT_STATE: GameState = {
   sessionId: '',
   status: GameStatus.VOTING,

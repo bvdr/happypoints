@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { GameState, GameStatus } from '../types';
 import { FIBONACCI_DECK } from '../constants';
-import { Users, RotateCcw, Eye, Info, RefreshCw } from 'lucide-react';
+import { Users, RotateCcw, Eye, Info, RefreshCw, Volume2, VolumeOff } from 'lucide-react';
 import { WeaponSelector } from './WeaponSelector';
 import { SettingsPanel } from './SettingsPanel';
+import { isMuted, toggleMute } from '../utils/sounds';
 
 interface UIOverlayProps {
   myId: string;
@@ -34,6 +35,11 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   // Admins have same controls as host (reveal, reset, settings)
   const hasAdminControls = isHost || isAdmin;
   const myVote = me?.vote;
+
+  const [muted, setMuted] = useState(isMuted);
+  const handleToggleMute = useCallback(() => {
+    setMuted(toggleMute());
+  }, []);
 
   return (
     <div className="absolute inset-0 z-10 pointer-events-none flex flex-col justify-between">
@@ -94,14 +100,23 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 
       {/* Bottom Deck */}
       <div className="pointer-events-auto pb-6 pt-10 px-4 bg-gradient-to-t from-black via-black/80 to-transparent relative">
-         {/* Camera Reset Button - Bottom Left - Absolute positioned */}
-         <button
-           onClick={onResetCamera}
-           className="absolute left-4 bottom-10 bg-gray-800/80 hover:bg-gray-700/90 text-white p-3 rounded-lg backdrop-blur-md border border-gray-600/50 transition-all transform hover:scale-105 shadow-lg z-10"
-           title="Reset Camera Position"
-         >
-           <RefreshCw size={20} />
-         </button>
+         {/* Bottom Left Controls - Camera Reset + Mute Toggle */}
+         <div className="absolute left-4 bottom-10 flex gap-2 z-10">
+           <button
+             onClick={onResetCamera}
+             className="bg-gray-800/80 hover:bg-gray-700/90 text-white p-3 rounded-lg backdrop-blur-md border border-gray-600/50 transition-all transform hover:scale-105 shadow-lg"
+             title="Reset Camera Position"
+           >
+             <RefreshCw size={20} />
+           </button>
+           <button
+             onClick={handleToggleMute}
+             className="bg-gray-800/80 hover:bg-gray-700/90 text-white p-3 rounded-lg backdrop-blur-md border border-gray-600/50 transition-all transform hover:scale-105 shadow-lg"
+             title={muted ? 'Unmute Sound Effects' : 'Mute Sound Effects'}
+           >
+             {muted ? <VolumeOff size={20} /> : <Volume2 size={20} />}
+           </button>
+         </div>
 
          {/* Settings Panel - Bottom Right (left of weapon selector) */}
          <SettingsPanel

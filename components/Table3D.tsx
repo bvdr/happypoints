@@ -7,6 +7,7 @@ import { FELT_COLOR, RAIL_COLOR, CARD_BACK_COLOR, CARD_FRONT_COLOR, TABLE_WIDTH,
 import { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { Check, Shield, Crown } from 'lucide-react';
 import { EmojiThrow } from './EmojiThrow';
+import { playHitSound } from '../utils/sounds';
 import { LifeBar } from './LifeBar';
 import { MinusOneUp } from './MinusOneUp';
 import { VolumetricNumber } from './VolumetricNumber';
@@ -606,7 +607,13 @@ export const Table3D = forwardRef<Table3DRef, Table3DProps>(({ players, status, 
                         throw={throwData}
                         fromPosition={fromPos}
                         toPosition={toPos}
-                        onComplete={() => onEmojiThrowComplete(throwData.id)}
+                        onComplete={() => {
+                          // Only the recipient hears the hit sound
+                          if (throwData.toPlayerId === myId) {
+                            playHitSound(throwData.emoji);
+                          }
+                          onEmojiThrowComplete(throwData.id);
+                        }}
                       />
                     );
                   })}

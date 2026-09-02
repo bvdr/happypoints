@@ -8,7 +8,7 @@ const SESSION_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 // Time to wait before removing a disconnected player (reconnection grace period)
 const PLAYER_REMOVAL_DELAY_MS = 3000;
 // Accepted bounds for the host-configurable round timer, in minutes
-const MIN_ROUND_TIMER_MINUTES = 0.5;
+const MIN_ROUND_TIMER_MINUTES = 1;
 const MAX_ROUND_TIMER_MINUTES = 30;
 
 const DEFAULT_GAME_STATE: GameState = {
@@ -71,6 +71,7 @@ export class GameSessionDO extends DurableObject<Env> {
       this.sendToClient(server, {
         type: 'STATE_SYNC',
         payload: this.gameState,
+        serverNow: Date.now(),
       });
 
       return new Response(null, {
@@ -184,7 +185,7 @@ export class GameSessionDO extends DurableObject<Env> {
 
     if (stateChanged) {
       await this.persistState();
-      this.broadcast({ type: 'STATE_SYNC', payload: this.gameState });
+      this.broadcast({ type: 'STATE_SYNC', payload: this.gameState, serverNow: Date.now() });
     }
 
     // 2. Auto-reveal if the round deadline has passed
@@ -193,7 +194,7 @@ export class GameSessionDO extends DurableObject<Env> {
       typeof this.gameState.roundDeadline === 'number' &&
       now >= this.gameState.roundDeadline
     ) {
-      await this.performReveal(null);
+      await this.performReveal(null, true);
     }
 
     // 3. Check for full session cleanup (no connections AND no players left)
@@ -309,7 +310,7 @@ export class GameSessionDO extends DurableObject<Env> {
         // Rebroadcasting the incoming message would not carry the new deadline
         this.broadcast({
           type: 'RESET',
-          payload: { roundDeadline: this.gameState.roundDeadline },
+          payload: { roundDeadline: this.gameState.roundDeadline, serverNow: Date.now() },
         });
         break;
       }
@@ -426,6 +427,7 @@ export class GameSessionDO extends DurableObject<Env> {
             enabled: this.gameState.roundTimer.enabled,
             minutes,
             roundDeadline: this.gameState.roundDeadline,
+            serverNow: Date.now(),
           },
         });
         break;
@@ -513,8 +515,12 @@ export class GameSessionDO extends DurableObject<Env> {
    * Computes the average server-side, flips to REVEALED, clears any round
    * deadline, then persists and broadcasts. Shared by the manual REVEAL
    * message and the round-deadline alarm so both behave identically.
+   *
+   * `autoRevealed` is set only by the alarm path. It is a per-message fact,
+   * not persisted state: it tells clients this round had no revealing client,
+   * so nobody has fetched the AI summary yet.
    */
-  private async performReveal(aiSummary: string | null): Promise<void> {
+  private async performReveal(aiSummary: string | null, autoRevealed = false): Promise<void> {
     let sum = 0;
     let count = 0;
 
@@ -543,6 +549,7 @@ export class GameSessionDO extends DurableObject<Env> {
         status: GameStatus.REVEALED,
         average,
         aiSummary: this.gameState.aiSummary,
+        autoRevealed,
       },
     });
   }

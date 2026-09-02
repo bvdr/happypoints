@@ -51,16 +51,26 @@ export interface GameState {
 export type SocketMessage =
   | { type: 'JOIN'; payload: Player }
   | { type: 'VOTE'; payload: { id: string; vote: string | null } }
-  | { type: 'REVEAL'; payload: { status: GameStatus; average: number | null; aiSummary: string | null } }
+  | {
+      type: 'REVEAL';
+      payload: {
+        status: GameStatus;
+        average: number | null;
+        aiSummary: string | null;
+        // True only for a deadline auto-reveal, which has no originating
+        // client — tells the host it owns the AI summary fetch for this round
+        autoRevealed?: boolean;
+      };
+    }
   | { type: 'AI_SUMMARY'; payload: { aiSummary: string } }
-  | { type: 'RESET'; payload: { roundDeadline?: number | null } | null }
+  | { type: 'RESET'; payload: { roundDeadline?: number | null; serverNow?: number } | null }
   | { type: 'LEAVE'; payload: { id: string } }
   | { type: 'THROW_EMOJI'; payload: EmojiThrow }
   | { type: 'HIT_PLAYER'; payload: { throwId?: string; playerId: string; damage?: number; timestamp?: number; reset?: boolean; emoji?: string } }
   | { type: 'TOGGLE_POOP'; payload: { disabled: boolean } }
-  | { type: 'SET_ROUND_TIMER'; payload: RoundTimerSetting & { roundDeadline?: number | null } }
+  | { type: 'SET_ROUND_TIMER'; payload: RoundTimerSetting & { roundDeadline?: number | null; serverNow?: number } }
   | { type: 'SET_ADMIN'; payload: { playerId: string; isAdmin: boolean } }
-  | { type: 'STATE_SYNC'; payload: GameState }
+  | { type: 'STATE_SYNC'; payload: GameState; serverNow?: number }
   | { type: 'ERROR'; payload: { message: string } };
 
 // Per-connection metadata stored via ws.serializeAttachment/deserializeAttachment

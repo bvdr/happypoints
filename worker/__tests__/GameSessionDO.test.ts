@@ -1,4 +1,4 @@
-import { env } from 'cloudflare:test';
+import { env, runInDurableObject, runDurableObjectAlarm } from 'cloudflare:test';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GameStatus } from '../types';
 import type { GameState, SocketMessage, Player } from '../types';
@@ -44,6 +44,20 @@ async function connect(): Promise<{ ws: WebSocket; initialState: GameState }> {
 async function getState(): Promise<GameState> {
   const resp = await doStub.fetch(`http://fake-host/api/session/${SESSION_ID}`);
   return resp.json();
+}
+
+/** Read the DO's single alarm slot — epoch ms, or null when disarmed */
+async function getAlarm(): Promise<number | null> {
+  return runInDurableObject(doStub, (_instance, state) => state.storage.getAlarm());
+}
+
+/** Read the DO's pending player-removal map */
+async function getPendingRemovals(): Promise<Record<string, number>> {
+  return runInDurableObject(
+    doStub,
+    async (_instance, state) =>
+      (await state.storage.get<Record<string, number>>('pendingRemovals')) || {}
+  );
 }
 
 function nextMessage(ws: WebSocket, timeoutMs = 2000): Promise<SocketMessage> {
@@ -542,6 +556,304 @@ describe('GameSessionDO', () => {
       expect(state.poopDisabled).toBe(false);
 
       ws.close();
+    });
+  });
+
+
+  // ── Round Timer ───────────────────────────────────────────────────
+
+  describe('SET_ROUND_TIMER', () => {
+    it('stores the round timer setting', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 1.5 } });
+      await nextMessage(ws);
+
+      const state = await getState();
+      expect(state.roundTimer).toEqual({ enabled: true, minutes: 1.5 });
+
+      ws.close();
+    });
+
+    it('sets a fresh deadline when enabled during VOTING', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      const before = Date.now();
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 2 } });
+      await nextMessage(ws);
+      const after = Date.now();
+
+      const state = await getState();
+      expect(state.roundDeadline).toBeGreaterThanOrEqual(before + 120_000);
+      expect(state.roundDeadline).toBeLessThanOrEqual(after + 120_000);
+
+      ws.close();
+    });
+
+    it('broadcasts the resulting deadline', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      const before = Date.now();
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 1 } });
+      const msg = await nextMessage(ws);
+      const after = Date.now();
+
+      expect(msg.type).toBe('SET_ROUND_TIMER');
+      expect((msg.payload as any).enabled).toBe(true);
+      expect((msg.payload as any).minutes).toBe(1);
+      expect(typeof (msg.payload as any).roundDeadline).toBe('number');
+      // serverNow lets clients correct for their own clock skew
+      expect((msg.payload as any).serverNow).toBeGreaterThanOrEqual(before);
+      expect((msg.payload as any).serverNow).toBeLessThanOrEqual(after);
+
+      ws.close();
+    });
+
+    it('arms the alarm at the new deadline when enabled mid-round', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 2 } });
+      await nextMessage(ws);
+
+      expect(await getAlarm()).toBe((await getState()).roundDeadline);
+
+      ws.close();
+    });
+
+    it('disarms the alarm when disabled mid-round', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 2 } });
+      await nextMessage(ws);
+      expect(await getAlarm()).toBeTypeOf('number');
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: false, minutes: 2 } });
+      await nextMessage(ws);
+
+      // Live connection and nothing else pending — the slot must be empty
+      expect(await getAlarm()).toBeNull();
+
+      ws.close();
+    });
+
+    it('clears the deadline when disabled', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 2 } });
+      await nextMessage(ws);
+      expect((await getState()).roundDeadline).toBeTypeOf('number');
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: false, minutes: 2 } });
+      await nextMessage(ws);
+
+      const state = await getState();
+      expect(state.roundTimer).toEqual({ enabled: false, minutes: 2 });
+      expect(state.roundDeadline).toBeNull();
+
+      ws.close();
+    });
+
+    it('stores the setting without a deadline while REVEALED', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'REVEAL', payload: { status: GameStatus.REVEALED, average: null, aiSummary: null } });
+      await nextMessage(ws);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 2 } });
+      await nextMessage(ws);
+
+      const state = await getState();
+      expect(state.roundTimer).toEqual({ enabled: true, minutes: 2 });
+      expect(state.roundDeadline).toBeNull();
+
+      ws.close();
+    });
+
+    it('ignores payloads with out-of-range or non-numeric minutes', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      for (const minutes of [0, -1, 0.1, 0.5, 31, NaN, 'two' as unknown as number]) {
+        send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes } });
+      }
+
+      // A following VOTE is the next broadcast — the invalid payloads produced none
+      send(ws, { type: 'VOTE', payload: { id: 'p1', vote: '3' } });
+      const msg = await nextMessage(ws);
+      expect(msg.type).toBe('VOTE');
+
+      const state = await getState();
+      expect(state.roundTimer).toBeUndefined();
+      expect(state.roundDeadline).toBeFalsy();
+
+      ws.close();
+    });
+  });
+
+  describe('Round deadline lifecycle', () => {
+    it('sets a deadline on RESET when the timer is enabled', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 1 } });
+      await nextMessage(ws);
+
+      const before = Date.now();
+      send(ws, { type: 'RESET', payload: null });
+      const msg = await nextMessage(ws);
+      const after = Date.now();
+
+      expect(msg.type).toBe('RESET');
+      expect((msg.payload as any).roundDeadline).toBeGreaterThanOrEqual(before + 60_000);
+      // serverNow lets clients correct for their own clock skew
+      expect((msg.payload as any).serverNow).toBeGreaterThanOrEqual(before);
+      expect((msg.payload as any).serverNow).toBeLessThanOrEqual(after);
+
+      const state = await getState();
+      expect(state.roundDeadline).toBeGreaterThanOrEqual(before + 60_000);
+      expect(state.roundDeadline).toBeLessThanOrEqual(after + 60_000);
+
+      ws.close();
+    });
+
+    it('leaves the deadline null on RESET when the timer is disabled', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'RESET', payload: null });
+      const msg = await nextMessage(ws);
+
+      expect((msg.payload as any).roundDeadline).toBeNull();
+      expect((await getState()).roundDeadline).toBeNull();
+
+      ws.close();
+    });
+
+    it('clears the deadline on manual REVEAL', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 2 } });
+      await nextMessage(ws);
+      expect((await getState()).roundDeadline).toBeTypeOf('number');
+
+      send(ws, { type: 'REVEAL', payload: { status: GameStatus.REVEALED, average: null, aiSummary: null } });
+      await nextMessage(ws);
+
+      expect((await getState()).roundDeadline).toBeNull();
+      // The now-stale deadline alarm must be dropped, not left armed
+      expect(await getAlarm()).toBeNull();
+
+      ws.close();
+    });
+
+    it('auto-reveals via the alarm once the deadline is due', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 2 } });
+      await nextMessage(ws);
+      send(ws, { type: 'RESET', payload: null });
+      await nextMessage(ws);
+      send(ws, { type: 'VOTE', payload: { id: 'p1', vote: '8' } });
+      await nextMessage(ws);
+
+      // Make the pending deadline already due without shortening the real timer
+      await runInDurableObject(doStub, async (instance, state) => {
+        const gs = (instance as unknown as { gameState: GameState }).gameState;
+        gs.roundDeadline = Date.now() - 1;
+        await state.storage.put('gameState', gs);
+      });
+
+      const received: SocketMessage[] = [];
+      ws.addEventListener('message', (event) => {
+        received.push(JSON.parse((event as MessageEvent).data as string));
+      });
+
+      const ran = await runDurableObjectAlarm(doStub);
+      expect(ran).toBe(true);
+
+      const after = await getState();
+      expect(after.status).toBe(GameStatus.REVEALED);
+      expect(after.average).toBe(8);
+      expect(after.roundDeadline).toBeNull();
+
+      const reveal = received.find(m => m.type === 'REVEAL');
+      expect(reveal).toBeDefined();
+      // Marks the reveal as having no originating client, so only the host's
+      // fallback fetches the AI summary
+      expect((reveal!.payload as any).autoRevealed).toBe(true);
+
+      ws.close();
+    });
+
+    it('does not flag a manual REVEAL as auto-revealed', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+
+      send(ws, { type: 'REVEAL', payload: { status: GameStatus.REVEALED, average: null, aiSummary: null } });
+      const msg = await nextMessage(ws);
+
+      expect(msg.type).toBe('REVEAL');
+      expect((msg.payload as any).autoRevealed).toBe(false);
+
+      ws.close();
+    });
+
+    it('still removes disconnected players when a round deadline is also pending', async () => {
+      const { ws } = await connect();
+      send(ws, makeJoinMessage('p1', 'Alice', true));
+      await nextMessage(ws);
+      const { ws: ws2 } = await connect();
+      send(ws2, makeJoinMessage('p2', 'Bob', false));
+      await nextMessage(ws2);
+
+      send(ws, { type: 'SET_ROUND_TIMER', payload: { enabled: true, minutes: 30 } });
+      await nextMessage(ws);
+
+      send(ws2, { type: 'LEAVE', payload: { id: 'p2' } });
+      await new Promise(r => setTimeout(r, 50));
+
+      // The 3s removal is sooner than the 30min deadline, so it owns the slot
+      const removalTime = (await getPendingRemovals()).p2;
+      expect(removalTime).toBeTypeOf('number');
+      expect(await getAlarm()).toBe(removalTime);
+      expect(removalTime).toBeLessThan((await getState()).roundDeadline!);
+
+      // Removal is due 3s out — pull it into the past, then fire the alarm
+      await runInDurableObject(doStub, async (_instance, state) => {
+        await state.storage.put('pendingRemovals', { p2: Date.now() - 1 });
+      });
+      expect(await runDurableObjectAlarm(doStub)).toBe(true);
+
+      const state = await getState();
+      expect(state.players.map(p => p.id)).toEqual(['p1']);
+      // The far-future round deadline must survive the removal pass
+      expect(state.status).toBe(GameStatus.VOTING);
+      expect(state.roundDeadline).toBeTypeOf('number');
+
+      ws.close();
+      ws2.close();
     });
   });
 

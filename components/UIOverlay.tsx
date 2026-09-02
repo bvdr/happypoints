@@ -18,6 +18,8 @@ interface UIOverlayProps {
   onSelectWeapon: (emoji: string) => void;
   onTogglePoop?: (disabled: boolean) => void;
   onSetRoundTimer?: (enabled: boolean, minutes: number) => void;
+  /** serverNow - Date.now(), so the countdown ignores local clock skew */
+  clockOffsetMs?: number;
 }
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
@@ -31,6 +33,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   onSelectWeapon,
   onTogglePoop,
   onSetRoundTimer,
+  clockOffsetMs,
 }) => {
   const me = gameState.players.find((p) => p.id === myId);
   const isHost = me?.isHost;
@@ -80,7 +83,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
 
       {/* Round Timer Countdown — same slot as the AI toast, which only shows when REVEALED */}
       {gameState.status === GameStatus.VOTING && gameState.roundDeadline != null && (
-        <RoundTimer deadline={gameState.roundDeadline} />
+        <RoundTimer deadline={gameState.roundDeadline} clockOffsetMs={clockOffsetMs} />
       )}
 
       {/* AI Summary Toast (Absolute Top Center) */}

@@ -9,8 +9,10 @@ const TICK_INTERVAL_MS = 250;
 const URGENT_SECONDS = 10;
 
 interface RoundTimerProps {
-  /** Epoch ms at which the round auto-reveals */
+  /** Epoch ms at which the round auto-reveals (server clock) */
   deadline: number;
+  /** serverNow - Date.now(), so a skewed local clock still agrees with everyone */
+  clockOffsetMs?: number;
 }
 
 const formatRemaining = (secondsLeft: number): string => {
@@ -23,20 +25,21 @@ const formatRemaining = (secondsLeft: number): string => {
  * Compact m:ss countdown to the server-set round deadline.
  * Beeps once per second over the final URGENT_SECONDS (honours the mute toggle).
  */
-export const RoundTimer: React.FC<RoundTimerProps> = ({ deadline }) => {
-  const [remainingMs, setRemainingMs] = useState(() => Math.max(0, deadline - Date.now()));
-  // Last whole second we beeped on — keeps extra renders from double-firing
-  const lastBeepSecondRef = useRef<number | null>(null);
+export const RoundTimer: React.FC<RoundTimerProps> = ({ deadline, clockOffsetMs = 0 }) => {
+  const [remainingMs, setRemainingMs] = useState(() =>
+    Math.max(0, deadline - (Date.now() + clockOffsetMs))
+  );
+  // Last `deadline:second` we beeped on. Keyed to the deadline as well as the
+  // second so a remount (StrictMode, a late joiner) can't re-beep the same tick
+  const lastBeepSecondRef = useRef<string | null>(null);
 
   useEffect(() => {
-    lastBeepSecondRef.current = null;
-
-    const update = () => setRemainingMs(Math.max(0, deadline - Date.now()));
+    const update = () => setRemainingMs(Math.max(0, deadline - (Date.now() + clockOffsetMs)));
     update();
 
     const interval = setInterval(update, TICK_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [deadline]);
+  }, [deadline, clockOffsetMs]);
 
   const secondsLeft = Math.ceil(remainingMs / 1000);
   const isUrgent = secondsLeft <= URGENT_SECONDS;
@@ -44,11 +47,13 @@ export const RoundTimer: React.FC<RoundTimerProps> = ({ deadline }) => {
   useEffect(() => {
     // Beep on 10, 9, … 1 — never on 0, which is the reveal itself
     if (secondsLeft > URGENT_SECONDS || secondsLeft < 1) return;
-    if (lastBeepSecondRef.current === secondsLeft) return;
 
-    lastBeepSecondRef.current = secondsLeft;
+    const beepKey = `${deadline}:${secondsLeft}`;
+    if (lastBeepSecondRef.current === beepKey) return;
+
+    lastBeepSecondRef.current = beepKey;
     playCountdownTick();
-  }, [secondsLeft]);
+  }, [deadline, secondsLeft]);
 
   return (
     <div

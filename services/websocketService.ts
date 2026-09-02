@@ -49,11 +49,15 @@ export const useGameSession = (
   selectedWeaponRef.current = selectedWeapon;
   // Track knockout reset timeouts per player to prevent duplicates and allow cleanup
   const knockoutTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  // True once this client has sent REVEAL for the current round — it already
-  // owns the AI summary fetch, so the host fallback below must stay out
-  const revealInitiatedRef = useRef(false);
   // True once the host fallback has fired for the current round
   const fallbackSummaryRef = useRef(false);
+  // Server's `autoRevealed` flag for the reveal we're currently showing. Only a
+  // deadline auto-reveal has no originating client, so only that one needs the
+  // host to fetch the AI summary — a manual REVEAL by any admin already did.
+  const lastRevealWasAutoRef = useRef(false);
+  // serverNow - Date.now() at the last server message that carried a clock.
+  // Countdowns add this so a skewed client agrees with everyone else.
+  const [clockOffsetMs, setClockOffsetMs] = useState(0);
 
   // Determine WebSocket URL based on environment
   const getWebSocketUrl = useCallback(() => {
@@ -110,9 +114,6 @@ export const useGameSession = (
     // Check if I'm host or admin
     const me = gameState.players.find(p => p.id === myId);
     if (!me?.isHost && !me?.isAdmin) return;
-
-    // This client owns the summary fetch for this round
-    revealInitiatedRef.current = true;
 
     // Send REVEAL immediately with no AI summary
     send({
@@ -189,12 +190,14 @@ export const useGameSession = (
         ...prev,
         roundTimer: { enabled, minutes },
         roundDeadline:
-          enabled && prev.status === GameStatus.VOTING ? Date.now() + minutes * 60_000 : null,
+          enabled && prev.status === GameStatus.VOTING
+            ? Date.now() + clockOffsetMs + minutes * 60_000
+            : null,
       }));
 
       send({ type: 'SET_ROUND_TIMER', payload: { enabled, minutes } });
     },
-    [send, myId, gameState.players]
+    [send, myId, gameState.players, clockOffsetMs]
   );
 
   const setAdmin = useCallback(
@@ -283,6 +286,15 @@ export const useGameSession = (
         switch (message.type) {
           case 'STATE_SYNC':
             // Full state sync from server
+            if (typeof message.serverNow === 'number') {
+              setClockOffsetMs(message.serverNow - Date.now());
+            }
+            // A sync carries no reveal provenance, and a host that missed the
+            // RESET for this round would otherwise keep a stale guard forever
+            lastRevealWasAutoRef.current = false;
+            if (message.payload.status === GameStatus.VOTING) {
+              fallbackSummaryRef.current = false;
+            }
             setGameState(message.payload);
             break;
 
@@ -310,6 +322,7 @@ export const useGameSession = (
             break;
 
           case 'REVEAL':
+            lastRevealWasAutoRef.current = message.payload.autoRevealed === true;
             setGameState(prev => ({
               ...prev,
               status: GameStatus.REVEALED,
@@ -329,9 +342,12 @@ export const useGameSession = (
             break;
 
           case 'RESET':
-            // New round — whichever client reveals it next owns the summary
-            revealInitiatedRef.current = false;
+            if (typeof message.payload?.serverNow === 'number') {
+              setClockOffsetMs(message.payload.serverNow - Date.now());
+            }
+            // New round — no reveal yet, so the host fallback is armed again
             fallbackSummaryRef.current = false;
+            lastRevealWasAutoRef.current = false;
             setGameState(prev => ({
               ...prev,
               status: GameStatus.VOTING,
@@ -555,7 +571,9 @@ export const useGameSession = (
     if (!me?.isHost) return;
     if (gameState.status !== GameStatus.REVEALED) return;
     if (gameState.aiSummary !== null) return;
-    if (revealInitiatedRef.current || fallbackSummaryRef.current) return;
+    // A manual REVEAL's initiator already owns the fetch, whoever they were
+    if (!lastRevealWasAutoRef.current) return;
+    if (fallbackSummaryRef.current) return;
 
     fallbackSummaryRef.current = true;
 
@@ -628,5 +646,6 @@ export const useGameSession = (
     setRoundTimer,
     setAdmin,
     isConnected,
+    clockOffsetMs,
   };
 };

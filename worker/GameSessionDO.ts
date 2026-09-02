@@ -7,6 +7,9 @@ const MAX_EMOJI_THROWS = 50;
 const SESSION_CLEANUP_DELAY_MS = 5 * 60 * 1000; // 5 minutes
 // Time to wait before removing a disconnected player (reconnection grace period)
 const PLAYER_REMOVAL_DELAY_MS = 3000;
+// Accepted bounds for the host-configurable round timer, in minutes
+const MIN_ROUND_TIMER_MINUTES = 0.5;
+const MAX_ROUND_TIMER_MINUTES = 30;
 
 const DEFAULT_GAME_STATE: GameState = {
   sessionId: '',
@@ -16,6 +19,7 @@ const DEFAULT_GAME_STATE: GameState = {
   aiSummary: null,
   emojiThrows: [],
   poopDisabled: false,
+  roundDeadline: null,
 };
 
 /**
@@ -140,7 +144,8 @@ export class GameSessionDO extends DurableObject<Env> {
   }
 
   /**
-   * Alarm handler — processes pending player removals and session cleanup.
+   * Alarm handler — processes pending player removals, round-deadline
+   * auto-reveals and session cleanup.
    * Only one alarm can be active at a time, so we schedule for the earliest
    * needed time and process everything that's due when it fires.
    */
@@ -182,14 +187,23 @@ export class GameSessionDO extends DurableObject<Env> {
       this.broadcast({ type: 'STATE_SYNC', payload: this.gameState });
     }
 
-    // 2. Check for full session cleanup (no connections AND no players left)
+    // 2. Auto-reveal if the round deadline has passed
+    if (
+      this.gameState.status === GameStatus.VOTING &&
+      typeof this.gameState.roundDeadline === 'number' &&
+      now >= this.gameState.roundDeadline
+    ) {
+      await this.performReveal(null);
+    }
+
+    // 3. Check for full session cleanup (no connections AND no players left)
     const activeConnections = this.ctx.getWebSockets();
     if (activeConnections.length === 0 && this.gameState.players.length === 0) {
       await this.ctx.storage.deleteAll();
       return;
     }
 
-    // 3. Schedule next alarm if needed
+    // 4. Schedule next alarm if needed
     await this.scheduleNextAlarm();
   }
 
@@ -275,34 +289,9 @@ export class GameSessionDO extends DurableObject<Env> {
       }
 
       case 'REVEAL': {
-        let sum = 0;
-        let count = 0;
-
-        this.gameState.players.forEach(p => {
-          if (p.vote && p.vote !== '?' && p.vote !== '☕') {
-            const val = parseInt(p.vote);
-            if (!isNaN(val)) {
-              sum += val;
-              count++;
-            }
-          }
-        });
-
-        const average = count > 0 ? parseFloat((sum / count).toFixed(2)) : 0;
-
-        this.gameState.status = GameStatus.REVEALED;
-        this.gameState.average = average;
-        this.gameState.aiSummary = message.payload.aiSummary || null;
-
-        await this.persistState();
-        this.broadcast({
-          type: 'REVEAL',
-          payload: {
-            status: GameStatus.REVEALED,
-            average,
-            aiSummary: this.gameState.aiSummary,
-          },
-        });
+        await this.performReveal(message.payload.aiSummary || null);
+        // Drop the now-stale round-deadline alarm
+        await this.scheduleNextAlarm();
         break;
       }
 
@@ -313,9 +302,15 @@ export class GameSessionDO extends DurableObject<Env> {
         this.gameState.players.forEach(p => {
           p.vote = null;
         });
+        this.gameState.roundDeadline = this.nextRoundDeadline();
 
         await this.persistState();
-        this.broadcast(message);
+        await this.scheduleNextAlarm();
+        // Rebroadcasting the incoming message would not carry the new deadline
+        this.broadcast({
+          type: 'RESET',
+          payload: { roundDeadline: this.gameState.roundDeadline },
+        });
         break;
       }
 
@@ -403,6 +398,39 @@ export class GameSessionDO extends DurableObject<Env> {
         break;
       }
 
+      case 'SET_ROUND_TIMER': {
+        const { enabled, minutes } = message.payload;
+
+        // Ignore invalid durations — no server-side authorization exists for any
+        // message type here, but a bad number would corrupt the alarm schedule
+        if (
+          typeof minutes !== 'number' ||
+          !Number.isFinite(minutes) ||
+          minutes < MIN_ROUND_TIMER_MINUTES ||
+          minutes > MAX_ROUND_TIMER_MINUTES
+        ) {
+          break;
+        }
+
+        this.gameState.roundTimer = { enabled: !!enabled, minutes };
+        // Only a live voting round carries a deadline. Enabling (or changing the
+        // duration while enabled) restarts it from now; disabling clears it.
+        this.gameState.roundDeadline =
+          this.gameState.status === GameStatus.VOTING ? this.nextRoundDeadline() : null;
+
+        await this.persistState();
+        await this.scheduleNextAlarm();
+        this.broadcast({
+          type: 'SET_ROUND_TIMER',
+          payload: {
+            enabled: this.gameState.roundTimer.enabled,
+            minutes,
+            roundDeadline: this.gameState.roundDeadline,
+          },
+        });
+        break;
+      }
+
       case 'SET_ADMIN': {
         const { playerId, isAdmin } = message.payload;
         const targetPlayer = this.gameState.players.find(p => p.id === playerId);
@@ -447,28 +475,76 @@ export class GameSessionDO extends DurableObject<Env> {
   // ─── Helpers ────────────────────────────────────────────────────────
 
   /**
-   * Schedules the next alarm for the earliest pending event (player removal or session cleanup).
-   * Only one alarm can be active at a time — new setAlarm overwrites the previous one.
+   * Schedules the next alarm for the earliest pending event — player removal,
+   * round-deadline auto-reveal, or session cleanup. Only one alarm can be
+   * active at a time, so all three share this single slot.
    */
   private async scheduleNextAlarm(): Promise<void> {
     const pendingRemovals = (await this.ctx.storage.get<Record<string, number>>('pendingRemovals')) || {};
-    const removalTimes = Object.values(pendingRemovals);
+    const candidates = Object.values(pendingRemovals);
 
-    if (removalTimes.length > 0) {
-      // Schedule for the earliest pending player removal
-      const nextTime = Math.min(...removalTimes);
-      await this.ctx.storage.setAlarm(nextTime);
-    } else {
-      const activeConnections = this.ctx.getWebSockets();
-      if (activeConnections.length === 0 && this.gameState.players.length > 0) {
-        // No pending removals, no connections, but players still in state —
-        // schedule full session cleanup after delay
-        await this.ctx.storage.setAlarm(Date.now() + SESSION_CLEANUP_DELAY_MS);
-      } else if (activeConnections.length > 0) {
-        // Active connections exist — no alarm needed
-        await this.ctx.storage.deleteAlarm();
-      }
+    if (this.gameState.status === GameStatus.VOTING && typeof this.gameState.roundDeadline === 'number') {
+      candidates.push(this.gameState.roundDeadline);
     }
+
+    const activeConnections = this.ctx.getWebSockets();
+    if (activeConnections.length === 0 && this.gameState.players.length > 0) {
+      // No connections but players still in state — schedule full session
+      // cleanup after delay
+      candidates.push(Date.now() + SESSION_CLEANUP_DELAY_MS);
+    }
+
+    if (candidates.length > 0) {
+      await this.ctx.storage.setAlarm(Math.min(...candidates));
+    } else if (activeConnections.length > 0) {
+      // Active connections and nothing pending — no alarm needed
+      await this.ctx.storage.deleteAlarm();
+    }
+  }
+
+  /** Deadline for a round starting now, or null when the timer is off. */
+  private nextRoundDeadline(): number | null {
+    const timer = this.gameState.roundTimer;
+    if (!timer?.enabled) return null;
+    return Date.now() + timer.minutes * 60_000;
+  }
+
+  /**
+   * Computes the average server-side, flips to REVEALED, clears any round
+   * deadline, then persists and broadcasts. Shared by the manual REVEAL
+   * message and the round-deadline alarm so both behave identically.
+   */
+  private async performReveal(aiSummary: string | null): Promise<void> {
+    let sum = 0;
+    let count = 0;
+
+    this.gameState.players.forEach(p => {
+      if (p.vote && p.vote !== '?' && p.vote !== '☕') {
+        const val = parseInt(p.vote);
+        if (!isNaN(val)) {
+          sum += val;
+          count++;
+        }
+      }
+    });
+
+    const average = count > 0 ? parseFloat((sum / count).toFixed(2)) : 0;
+
+    this.gameState.status = GameStatus.REVEALED;
+    this.gameState.average = average;
+    this.gameState.aiSummary = aiSummary;
+    // A revealed round has no deadline
+    this.gameState.roundDeadline = null;
+
+    await this.persistState();
+    this.broadcast({
+      type: 'REVEAL',
+      payload: {
+        status: GameStatus.REVEALED,
+        average,
+        aiSummary: this.gameState.aiSummary,
+      },
+    });
   }
 
   private async persistState(): Promise<void> {

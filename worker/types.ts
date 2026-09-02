@@ -28,6 +28,13 @@ export enum GameStatus {
   REVEALED = 'revealed',
 }
 
+// Host-configurable round timer setting. Duration is in MINUTES everywhere
+// user-facing; the server converts to ms when computing a deadline.
+export interface RoundTimerSetting {
+  enabled: boolean;
+  minutes: number;
+}
+
 export interface GameState {
   sessionId: string;
   status: GameStatus;
@@ -36,6 +43,8 @@ export interface GameState {
   aiSummary: string | null;
   emojiThrows: EmojiThrow[];
   poopDisabled?: boolean; // Host can disable poop emoji - shows rose instead
+  roundTimer?: RoundTimerSetting; // Session setting (off by default)
+  roundDeadline?: number | null; // Epoch ms when the current round auto-reveals
 }
 
 // WebSocket message types
@@ -44,11 +53,12 @@ export type SocketMessage =
   | { type: 'VOTE'; payload: { id: string; vote: string | null } }
   | { type: 'REVEAL'; payload: { status: GameStatus; average: number | null; aiSummary: string | null } }
   | { type: 'AI_SUMMARY'; payload: { aiSummary: string } }
-  | { type: 'RESET'; payload: null }
+  | { type: 'RESET'; payload: { roundDeadline?: number | null } | null }
   | { type: 'LEAVE'; payload: { id: string } }
   | { type: 'THROW_EMOJI'; payload: EmojiThrow }
   | { type: 'HIT_PLAYER'; payload: { throwId?: string; playerId: string; damage?: number; timestamp?: number; reset?: boolean; emoji?: string } }
   | { type: 'TOGGLE_POOP'; payload: { disabled: boolean } }
+  | { type: 'SET_ROUND_TIMER'; payload: RoundTimerSetting & { roundDeadline?: number | null } }
   | { type: 'SET_ADMIN'; payload: { playerId: string; isAdmin: boolean } }
   | { type: 'STATE_SYNC'; payload: GameState }
   | { type: 'ERROR'; payload: { message: string } };

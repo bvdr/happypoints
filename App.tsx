@@ -26,7 +26,7 @@ const GameSession: React.FC<{
   // Weapon selection state - defaults to volleyball
   const [selectedWeapon, setSelectedWeapon] = useState('🏐');
 
-  const { myId, gameState, vote, revealVotes, resetRound, throwEmoji, removeEmojiThrow, togglePoop, setAdmin } = useGameSession(
+  const { myId, gameState, vote, revealVotes, resetRound, throwEmoji, removeEmojiThrow, togglePoop, setRoundTimer, setAdmin } = useGameSession(
     playerName,
     sessionId,
     isHost,
@@ -60,6 +60,7 @@ const GameSession: React.FC<{
         selectedWeapon={selectedWeapon}
         onSelectWeapon={setSelectedWeapon}
         onTogglePoop={togglePoop}
+        onSetRoundTimer={setRoundTimer}
       />
 
       {/* Share Floating Button */}

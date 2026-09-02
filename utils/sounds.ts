@@ -393,6 +393,29 @@ const emojiSoundMap: Record<string, (ctx: AudioContext, now: number) => void> = 
   '🌹': playHeart, // Rose reuses heart's gentle chime
 };
 
+/**
+ * Short blip for the round-timer countdown, played once per second over the
+ * final seconds before the round auto-reveals. Respects the shared mute flag.
+ */
+export function playCountdownTick(): void {
+  if (muted) return;
+  const ctx = getAudioContext();
+  const now = ctx.currentTime;
+
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(880, now);
+
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.18, now + 0.01);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(now);
+  osc.stop(now + 0.1);
+}
+
 /** Play the hit sound matching the given emoji. Falls back to a generic pop. */
 export function playHitSound(emoji?: string): void {
   if (muted) return;

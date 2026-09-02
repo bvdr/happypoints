@@ -12,6 +12,7 @@ const DEFAULT_STATE: GameState = {
   aiSummary: null,
   emojiThrows: [],
   poopDisabled: false,
+  roundDeadline: null,
 };
 
 // Performance constants for emoji throws
@@ -48,6 +49,11 @@ export const useGameSession = (
   selectedWeaponRef.current = selectedWeapon;
   // Track knockout reset timeouts per player to prevent duplicates and allow cleanup
   const knockoutTimeoutsRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  // True once this client has sent REVEAL for the current round — it already
+  // owns the AI summary fetch, so the host fallback below must stay out
+  const revealInitiatedRef = useRef(false);
+  // True once the host fallback has fired for the current round
+  const fallbackSummaryRef = useRef(false);
 
   // Determine WebSocket URL based on environment
   const getWebSocketUrl = useCallback(() => {
@@ -104,6 +110,9 @@ export const useGameSession = (
     // Check if I'm host or admin
     const me = gameState.players.find(p => p.id === myId);
     if (!me?.isHost && !me?.isAdmin) return;
+
+    // This client owns the summary fetch for this round
+    revealInitiatedRef.current = true;
 
     // Send REVEAL immediately with no AI summary
     send({
@@ -164,6 +173,26 @@ export const useGameSession = (
       setGameState(prev => ({ ...prev, poopDisabled: disabled }));
 
       send({ type: 'TOGGLE_POOP', payload: { disabled } });
+    },
+    [send, myId, gameState.players]
+  );
+
+  const setRoundTimer = useCallback(
+    (enabled: boolean, minutes: number) => {
+      // Check if I'm host or admin
+      const me = gameState.players.find(p => p.id === myId);
+      if (!me?.isHost && !me?.isAdmin) return;
+
+      // Optimistic local update for immediate UI feedback — mirrors what the
+      // server does with the same inputs
+      setGameState(prev => ({
+        ...prev,
+        roundTimer: { enabled, minutes },
+        roundDeadline:
+          enabled && prev.status === GameStatus.VOTING ? Date.now() + minutes * 60_000 : null,
+      }));
+
+      send({ type: 'SET_ROUND_TIMER', payload: { enabled, minutes } });
     },
     [send, myId, gameState.players]
   );
@@ -286,6 +315,8 @@ export const useGameSession = (
               status: GameStatus.REVEALED,
               average: message.payload.average,
               aiSummary: message.payload.aiSummary,
+              // A revealed round has no deadline
+              roundDeadline: null,
             }));
             break;
 
@@ -298,12 +329,17 @@ export const useGameSession = (
             break;
 
           case 'RESET':
+            // New round — whichever client reveals it next owns the summary
+            revealInitiatedRef.current = false;
+            fallbackSummaryRef.current = false;
             setGameState(prev => ({
               ...prev,
               status: GameStatus.VOTING,
               average: null,
               aiSummary: null,
               players: prev.players.map(p => ({ ...p, vote: null })),
+              // Payload is null on older clients, { roundDeadline } on current ones
+              roundDeadline: message.payload?.roundDeadline ?? null,
             }));
             break;
 
@@ -381,6 +417,14 @@ export const useGameSession = (
             setGameState(prev => ({
               ...prev,
               poopDisabled: message.payload.disabled,
+            }));
+            break;
+
+          case 'SET_ROUND_TIMER':
+            setGameState(prev => ({
+              ...prev,
+              roundTimer: { enabled: message.payload.enabled, minutes: message.payload.minutes },
+              roundDeadline: message.payload.roundDeadline ?? null,
             }));
             break;
 
@@ -503,6 +547,28 @@ export const useGameSession = (
     }
   }, [gameState.players, gameState.status, myId, revealVotes]);
 
+  // An alarm-triggered auto-reveal has no originating client, so nobody fetched
+  // the AI summary. The host fills it in — host only, so a table of N players
+  // doesn't fire N Gemini calls for the same round.
+  useEffect(() => {
+    const me = gameState.players.find(p => p.id === myId);
+    if (!me?.isHost) return;
+    if (gameState.status !== GameStatus.REVEALED) return;
+    if (gameState.aiSummary !== null) return;
+    if (revealInitiatedRef.current || fallbackSummaryRef.current) return;
+
+    fallbackSummaryRef.current = true;
+
+    const rawVotes: string[] = [];
+    gameState.players.forEach(p => {
+      if (p.vote) rawVotes.push(p.vote);
+    });
+
+    generateVoteSummary(rawVotes).then(summary => {
+      send({ type: 'AI_SUMMARY', payload: { aiSummary: summary } });
+    });
+  }, [gameState.status, gameState.aiSummary, gameState.players, myId, send]);
+
   // TTL cleanup for emoji throws - prevents memory leak from network desync
   // Runs every second and removes throws older than EMOJI_THROW_TTL_MS
   useEffect(() => {
@@ -559,6 +625,7 @@ export const useGameSession = (
     throwEmoji,
     removeEmojiThrow,
     togglePoop,
+    setRoundTimer,
     setAdmin,
     isConnected,
   };

@@ -2,6 +2,10 @@ import { CardValue } from './types';
 
 export const FIBONACCI_DECK: CardValue[] = ['1', '2', '3', '5', '8', '13', '21', '?', '☕'];
 
+// Round timer presets, in minutes (the unit shown to the user everywhere)
+export const ROUND_TIMER_PRESETS = [1, 1.5, 2, 3, 5];
+export const DEFAULT_ROUND_TIMER_MINUTES = 2;
+
 // Colors based on the screenshot - Tuned for High Visibility
 export const FELT_COLOR = '#059669'; // Lighter, more vibrant Emerald Green (Tailwind Emerald 600)
 export const FELT_RING_COLOR = '#6ee7b7'; // Very bright Emerald (Tailwind Emerald 300)

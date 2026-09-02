@@ -4,6 +4,7 @@ import { FIBONACCI_DECK } from '../constants';
 import { Users, RotateCcw, Eye, Info, RefreshCw, Volume2, VolumeOff } from 'lucide-react';
 import { WeaponSelector } from './WeaponSelector';
 import { SettingsPanel } from './SettingsPanel';
+import { RoundTimer } from './RoundTimer';
 import { isMuted, toggleMute } from '../utils/sounds';
 
 interface UIOverlayProps {
@@ -16,6 +17,7 @@ interface UIOverlayProps {
   selectedWeapon: string;
   onSelectWeapon: (emoji: string) => void;
   onTogglePoop?: (disabled: boolean) => void;
+  onSetRoundTimer?: (enabled: boolean, minutes: number) => void;
 }
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({
@@ -28,6 +30,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
   selectedWeapon,
   onSelectWeapon,
   onTogglePoop,
+  onSetRoundTimer,
 }) => {
   const me = gameState.players.find((p) => p.id === myId);
   const isHost = me?.isHost;
@@ -74,6 +77,11 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
           </div>
         )}
       </div>
+
+      {/* Round Timer Countdown — same slot as the AI toast, which only shows when REVEALED */}
+      {gameState.status === GameStatus.VOTING && gameState.roundDeadline != null && (
+        <RoundTimer deadline={gameState.roundDeadline} />
+      )}
 
       {/* AI Summary Toast (Absolute Top Center) */}
       {gameState.status === GameStatus.REVEALED && (
@@ -123,6 +131,8 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
            isHost={!!hasAdminControls}
            poopDisabled={gameState.poopDisabled}
            onTogglePoop={onTogglePoop}
+           roundTimer={gameState.roundTimer}
+           onSetRoundTimer={onSetRoundTimer}
          />
 
          {/* Weapon Selector - Bottom Right */}
